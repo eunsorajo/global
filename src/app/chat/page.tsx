@@ -46,7 +46,7 @@ export default function ChatPage() {
     <main className="max-w-3xl mx-auto px-4 py-6 flex flex-col h-[calc(100vh-64px)]">
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Gemini 채팅</h1>
-        <p className="text-sm text-gray-500 mt-1">Vertex AI Gemini 2.0 Flash · asia-northeast3</p>
+        <p className="text-sm text-gray-500 mt-1">Vertex AI Gemini 2.5 Flash · global</p>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
