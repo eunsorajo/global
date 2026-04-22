@@ -1,7 +1,8 @@
 import { dummyPartners } from '@/data/dummy';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { FollowUpStatus, PartnerGrade } from '@/types/partner';
+import { PartnerGrade } from '@/types/partner';
+import FollowUpList from '@/components/FollowUpList';
 
 const gradeColors: Record<PartnerGrade, string> = {
   '전략 파트너': 'bg-purple-100 text-purple-700',
@@ -10,12 +11,6 @@ const gradeColors: Record<PartnerGrade, string> = {
   '잠재 파트너': 'bg-yellow-100 text-yellow-700',
 };
 
-const followUpStatusLabel: Record<FollowUpStatus, { label: string; className: string }> = {
-  pending: { label: '대기', className: 'bg-gray-100 text-gray-600' },
-  in_progress: { label: '진행 중', className: 'bg-blue-100 text-blue-600' },
-  completed: { label: '완료', className: 'bg-green-100 text-green-600' },
-  overdue: { label: '기한 초과', className: 'bg-red-100 text-red-600' },
-};
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -80,9 +75,12 @@ export default async function PartnerDetailPage({ params }: Props) {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">회의 이력</h2>
-          <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <Link
+            href={`/meetings/new?partnerId=${partner.id}&partnerName=${encodeURIComponent(partner.companyName)}`}
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
             + 회의록 추가
-          </button>
+          </Link>
         </div>
 
         {partner.meetings.length === 0 ? (
@@ -102,36 +100,7 @@ export default async function PartnerDetailPage({ params }: Props) {
                 {meeting.followUps.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-2">팔로업 항목</p>
-                    <div className="space-y-2">
-                      {meeting.followUps.map((f) => {
-                        const status = followUpStatusLabel[f.status];
-                        return (
-                          <div
-                            key={f.id}
-                            className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                defaultChecked={f.status === 'completed'}
-                                className="rounded"
-                                readOnly
-                              />
-                              <span className={f.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-700'}>
-                                {f.content}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-xs text-gray-400">{f.assignee}</span>
-                              <span className="text-xs text-gray-400">· {f.dueDate}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${status.className}`}>
-                                {status.label}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <FollowUpList followUps={meeting.followUps} />
                   </div>
                 )}
               </div>

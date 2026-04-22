@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { dummyPartners } from '@/data/dummy';
 
 type InputMode = 'transcript' | 'audio' | 'manual';
 type Step = 'input' | 'preview' | 'saving';
@@ -27,6 +28,9 @@ function NewMeetingForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // URL 파라미터로 파트너 사전 선택 지원
+  const [selectedPartnerId, setSelectedPartnerId] = useState(params.get('partnerId') ?? '');
 
   const title = params.get('title') ?? '';
 
@@ -66,6 +70,23 @@ function NewMeetingForm() {
 
       {step === 'input' && (
         <div className="space-y-6">
+          {/* 파트너사 선택 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <p className="text-sm font-medium text-gray-700 mb-3">파트너사 선택</p>
+            <select
+              value={selectedPartnerId}
+              onChange={(e) => setSelectedPartnerId(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">파트너사를 선택하세요...</option>
+              {dummyPartners.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.companyName} ({p.country})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* 입력 방식 선택 */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <p className="text-sm font-medium text-gray-700 mb-3">입력 방식</p>
