@@ -1,15 +1,16 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 
+const ALLOWED_EMAILS = ['joeunsora@gmail.com'];
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 }, // 30일 유지
+  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          // Calendar API + Drive API + Sheets API 접근 권한 요청
           scope: [
             'openid',
             'email',
@@ -25,8 +26,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    async signIn({ user }) {
+      return ALLOWED_EMAILS.includes(user.email ?? '');
+    },
     async jwt({ token, account }) {
-      // 최초 로그인 시 access_token과 refresh_token 저장
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
@@ -35,7 +38,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      // 세션에 accessToken 포함 (Google API 호출용)
       session.accessToken = token.accessToken as string;
       return session;
     },
