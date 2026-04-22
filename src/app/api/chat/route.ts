@@ -10,7 +10,12 @@ export async function POST(req: NextRequest) {
 
   const { messages } = await req.json() as { messages: { role: string; text: string }[] };
 
-  const token = await getServiceAccountToken();
+  let token: string;
+  try {
+    token = await getServiceAccountToken();
+  } catch (e) {
+    return NextResponse.json({ error: `토큰 발급 실패: ${(e as Error).message}` }, { status: 500 });
+  }
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',
