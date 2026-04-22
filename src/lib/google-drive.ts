@@ -1,4 +1,5 @@
 import { MeetingMinutes } from './claude';
+import { getServiceAccountToken } from './google-auth';
 
 function formatMinutesAsText(
   title: string,
@@ -34,23 +35,22 @@ function formatMinutesAsText(
   return lines.join('\n');
 }
 
-export async function saveToDrive(
-  accessToken: string,
-  params: {
-    title: string;
-    date: string;
-    minutes: MeetingMinutes;
-    rawTranscript: string;
-    folderId?: string;
-  }
-): Promise<string> {
+export async function saveToDrive(params: {
+  title: string;
+  date: string;
+  minutes: MeetingMinutes;
+  rawTranscript: string;
+  folderId?: string;
+}): Promise<string> {
+  const accessToken = await getServiceAccountToken();
   const content = formatMinutesAsText(params.title, params.date, params.minutes, params.rawTranscript);
+  const folderId = params.folderId ?? process.env.GOOGLE_DRIVE_FOLDER_ID;
   const fileName = `[회의록] ${params.title} (${params.date}).md`;
 
   const metadata = {
     name: fileName,
     mimeType: 'text/plain',
-    ...(params.folderId ? { parents: [params.folderId] } : {}),
+    ...(folderId ? { parents: [folderId] } : {}),
   };
 
   const form = new FormData();

@@ -6,14 +6,13 @@ import { MeetingMinutes } from '@/lib/claude';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.accessToken) {
+  if (!session) {
     return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
   }
 
   const body = await req.json() as {
     title: string;
     date: string;
-    partnerId: string;
     partnerName: string;
     partnerCountry: string;
     partnerContact: string;
@@ -23,23 +22,21 @@ export async function POST(req: NextRequest) {
     assignee: string;
     minutes: MeetingMinutes;
     rawTranscript: string;
-    spreadsheetId: string;
-    driveFolderId?: string;
   };
 
   try {
-    // 1. Google Drive에 회의록 저장
-    const driveUrl = await saveToDrive(session.accessToken, {
-      title: body.title,
-      date: body.date,
-      minutes: body.minutes,
-      rawTranscript: body.rawTranscript,
-      folderId: body.driveFolderId,
-    });
+    // 서비스 계정으로 Drive/Sheets에 병렬 저장
+    const [driveUrl] = await Promise.all([
+      saveToDrive({
+        title: body.title,
+        date: body.date,
+        minutes: body.minutes,
+        rawTranscript: body.rawTranscript,
+      }),
+      ensureSheetHeaders(),
+    ]);
 
-    // 2. Google Sheets 파트너 정보 업데이트 (병렬)
-    await ensureSheetHeaders(session.accessToken, body.spreadsheetId);
-    await upsertPartnerToSheets(session.accessToken, body.spreadsheetId, {
+    await upsertPartnerToSheets({
       companyName: body.partnerName,
       country: body.partnerCountry,
       contactName: body.partnerContact,
