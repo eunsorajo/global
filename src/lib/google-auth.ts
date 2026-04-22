@@ -1,5 +1,4 @@
-// 서비스 계정으로 Google API 액세스 토큰 발급
-// Drive/Sheets는 사용자 로그인 없이 서비스 계정으로 접근합니다.
+import { createSign, createPrivateKey } from 'crypto';
 
 interface ServiceAccountCredentials {
   client_email: string;
@@ -8,6 +7,14 @@ interface ServiceAccountCredentials {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
+function base64url(buf: Buffer | string): string {
+  return Buffer.from(buf)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
 export async function getServiceAccountToken(
   scopes: string[] = [
     'https://www.googleapis.com/auth/drive.file',
@@ -15,7 +22,6 @@ export async function getServiceAccountToken(
     'https://www.googleapis.com/auth/cloud-platform',
   ]
 ): Promise<string> {
-  // 토큰이 유효하면 재사용 (만료 1분 전까지)
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.token;
   }
@@ -23,25 +29,28 @@ export async function getServiceAccountToken(
   const raw = Buffer.from(process.env.GOOGLE_CREDENTIALS_B64!, 'base64').toString('utf-8');
   const creds: ServiceAccountCredentials = JSON.parse(raw);
 
+  // 키 정규화: 모든 이스케이프된 \n을 실제 개행으로 변환
+  const pem = creds.private_key
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
   const now = Math.floor(Date.now() / 1000);
-  const payload = {
+  const header = base64url(Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
+  const payload = base64url(Buffer.from(JSON.stringify({
     iss: creds.client_email,
     scope: scopes.join(' '),
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
-  };
+  })));
 
-  // JWT 서명 (RS256)
-  const { SignJWT } = await import('jose');
-  const pem = creds.private_key.replace(/\\n/g, '\n');
-  const privateKey = await import('jose').then((jose) =>
-    jose.importPKCS8(pem, 'RS256')
-  );
-
-  const jwt = await new SignJWT(payload)
-    .setProtectedHeader({ alg: 'RS256' })
-    .sign(privateKey);
+  const signingInput = `${header}.${payload}`;
+  const privateKey = createPrivateKey({ key: pem, format: 'pem' });
+  const sign = createSign('RSA-SHA256');
+  sign.update(signingInput);
+  const signature = base64url(sign.sign(privateKey));
+  const jwt = `${signingInput}.${signature}`;
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
