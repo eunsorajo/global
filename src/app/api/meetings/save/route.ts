@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { saveToDrive } from '@/lib/google-drive';
 import { upsertPartnerToSheets, ensureSheetHeaders } from '@/lib/google-sheets';
-import { MeetingMinutes } from '@/lib/claude';
+import { MeetingMinutes } from '@/types/meeting';
 
 export async function POST(req: NextRequest) {
   const session = await auth();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generatePreMeetingBriefing } from '@/lib/partner-insights';
+import { generatePreMeetingBriefing } from '@/lib/gemini';
 
 export async function POST(req: NextRequest) {
   try {

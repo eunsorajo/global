@@ -1,4 +1,4 @@
-import { MeetingMinutes } from './claude';
+import { MeetingMinutes } from '@/types/meeting';
 import { getServiceAccountToken } from './google-auth';
 
 function formatMinutesAsText(
