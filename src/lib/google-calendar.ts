@@ -29,16 +29,20 @@ function extractMeetingLinks(event: Record<string, unknown>) {
   };
 }
 
-export async function fetchUpcomingMeetings(accessToken: string): Promise<CalendarEvent[]> {
+export async function fetchUpcomingMeetings(
+  accessToken: string,
+  timeMin?: string,
+  timeMax?: string
+): Promise<CalendarEvent[]> {
   const now = new Date().toISOString();
   const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-  url.searchParams.set('timeMin', now);
-  url.searchParams.set('timeMax', oneWeekLater);
+  url.searchParams.set('timeMin', timeMin ?? now);
+  url.searchParams.set('timeMax', timeMax ?? oneWeekLater);
   url.searchParams.set('singleEvents', 'true');
   url.searchParams.set('orderBy', 'startTime');
-  url.searchParams.set('maxResults', '20');
+  url.searchParams.set('maxResults', '100');
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` },
