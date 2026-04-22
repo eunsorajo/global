@@ -13,6 +13,8 @@ export default async function Navbar() {
       <div className="flex items-center gap-6 text-sm text-gray-600">
         <Link href="/" className="hover:text-blue-600 transition-colors">파트너 목록</Link>
         <Link href="/calendar" className="hover:text-blue-600 transition-colors">회의 일정</Link>
+        <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 작성</Link>
+        <Link href="/chat" className="hover:text-blue-600 transition-colors">AI 채팅</Link>
 
 {session ? (
           <>
