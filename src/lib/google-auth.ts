@@ -34,8 +34,9 @@ export async function getServiceAccountToken(
 
   // JWT 서명 (RS256)
   const { SignJWT } = await import('jose');
+  const pem = creds.private_key.replace(/\\n/g, '\n');
   const privateKey = await import('jose').then((jose) =>
-    jose.importPKCS8(creds.private_key, 'RS256')
+    jose.importPKCS8(pem, 'RS256')
   );
 
   const jwt = await new SignJWT(payload)
