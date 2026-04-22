@@ -29,6 +29,16 @@ function extractMeetingLinks(event: Record<string, unknown>) {
   };
 }
 
+async function fetchCalendarIds(accessToken: string): Promise<string[]> {
+  const res = await fetch(
+    'https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50',
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) return ['primary'];
+  const data = await res.json();
+  return (data.items ?? []).map((c: { id: string }) => c.id);
+}
+
 export async function fetchUpcomingMeetings(
   accessToken: string,
   timeMin?: string,
@@ -37,23 +47,34 @@ export async function fetchUpcomingMeetings(
   const now = new Date().toISOString();
   const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-  url.searchParams.set('timeMin', timeMin ?? now);
-  url.searchParams.set('timeMax', timeMax ?? oneWeekLater);
-  url.searchParams.set('singleEvents', 'true');
-  url.searchParams.set('orderBy', 'startTime');
-  url.searchParams.set('maxResults', '100');
-  url.searchParams.set('conferenceDataVersion', '1');
+  const calendarIds = await fetchCalendarIds(accessToken);
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    next: { revalidate: 300 }, // 5분 캐시
+  const allItems = await Promise.all(
+    calendarIds.map(async (calId) => {
+      const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`);
+      url.searchParams.set('timeMin', timeMin ?? now);
+      url.searchParams.set('timeMax', timeMax ?? oneWeekLater);
+      url.searchParams.set('singleEvents', 'true');
+      url.searchParams.set('orderBy', 'startTime');
+      url.searchParams.set('maxResults', '100');
+      url.searchParams.set('conferenceDataVersion', '1');
+
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.items ?? [];
+    })
+  );
+
+  const seen = new Set<string>();
+  const items: Record<string, unknown>[] = allItems.flat().filter((item) => {
+    const id = item.id as string;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
   });
-
-  if (!res.ok) throw new Error(`Calendar API 오류: ${res.status}`);
-
-  const data = await res.json();
-  const items: Record<string, unknown>[] = data.items ?? [];
 
   // Google Meet, Zoom, Teams 링크가 있는 회의만 필터링
   return items
