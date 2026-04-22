@@ -12,6 +12,7 @@ export async function getServiceAccountToken(
   scopes: string[] = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/cloud-platform',
   ]
 ): Promise<string> {
   // 토큰이 유효하면 재사용 (만료 1분 전까지)
