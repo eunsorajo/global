@@ -2,8 +2,8 @@ import { getServiceAccountToken } from './google-auth';
 import { MeetingMinutes, PartnerInsight, PartnerContext } from '@/types/meeting';
 
 const PROJECT_ID = 'western-will-493410-j8';
-const LOCATION = 'asia-northeast3';
-const MODEL = 'gemini-2.0-flash-001';
+const LOCATION = 'global';
+const MODEL = 'gemini-2.5-flash';
 const ENDPOINT = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
 
 async function callGemini(parts: object[], maxOutputTokens = 4096): Promise<string> {

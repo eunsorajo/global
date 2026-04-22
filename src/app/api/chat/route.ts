@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getServiceAccountToken } from '@/lib/google-auth';
 
-const ENDPOINT = 'https://asia-northeast3-aiplatform.googleapis.com/v1/projects/western-will-493410-j8/locations/asia-northeast3/publishers/google/models/gemini-2.0-flash-001:generateContent';
+const ENDPOINT = 'https://global-aiplatform.googleapis.com/v1/projects/western-will-493410-j8/locations/global/publishers/google/models/gemini-2.5-flash:generateContent';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
