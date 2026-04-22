@@ -43,6 +43,7 @@ export async function fetchUpcomingMeetings(
   url.searchParams.set('singleEvents', 'true');
   url.searchParams.set('orderBy', 'startTime');
   url.searchParams.set('maxResults', '100');
+  url.searchParams.set('conferenceDataVersion', '1');
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -75,5 +76,5 @@ export async function fetchUpcomingMeetings(
         ...links,
       };
     })
-    .filter((e) => e.meetLink || e.zoomLink || e.teamsLink);
+    .filter((e) => e.start); // 모든 일정 표시 (날짜 있는 항목만)
 }
