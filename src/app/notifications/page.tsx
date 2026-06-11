@@ -69,10 +69,10 @@ export default async function NotificationsPage() {
                 <div className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${config.className}`}>
                   <div className="flex items-start gap-3">
                     <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${config.dotColor}`} />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-gray-500">{config.label}</span>
-                        {n.dueDate && <span className="text-xs text-gray-400">기한 {n.dueDate}</span>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-xs font-medium text-gray-500 whitespace-nowrap">{config.label}</span>
+                        {n.dueDate && <span className="text-xs text-gray-400 whitespace-nowrap">기한 {n.dueDate}</span>}
                       </div>
                       <p className="text-sm font-semibold text-gray-900 mb-0.5">{n.title}</p>
                       <p className="text-sm text-gray-600 leading-relaxed">{n.body}</p>

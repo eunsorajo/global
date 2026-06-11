@@ -109,7 +109,7 @@ export default function SheetPullPoller() {
           : 'bg-gray-300';
 
   return (
-    <div className="flex items-center gap-2 text-xs text-gray-500">
+    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
       <span className={`inline-block w-2 h-2 rounded-full ${dotClass}`} aria-hidden />
       <span>
         시트 자동 동기화{' '}
@@ -136,7 +136,7 @@ export default function SheetPullPoller() {
       <button
         type="button"
         onClick={() => setEnabled((v) => !v)}
-        className={`ml-1 rounded-full px-2 py-0.5 border transition-colors ${
+        className={`ml-1 rounded-full px-2 py-0.5 border whitespace-nowrap transition-colors ${
           enabled
             ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
             : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'

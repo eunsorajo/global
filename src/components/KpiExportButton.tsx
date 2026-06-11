@@ -50,7 +50,7 @@ export default function KpiExportButton() {
       <button
         onClick={handleExport}
         disabled={loading}
-        className="text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition-colors"
+        className="text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
       >
         {loading ? '내보내는 중…' : '엑셀 내보내기'}
       </button>

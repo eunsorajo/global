@@ -30,21 +30,21 @@ function PartnerCard({ p, lastMeetingDate }: { p: PartnerSummary; lastMeetingDat
     <Link href={`/business-partners/${p.id}`}>
       <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer h-full flex flex-col">
         <div className="flex items-start justify-between mb-2">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-gray-400">No.{p.no} · {p.country}</p>
             <h3 className="font-semibold text-gray-900 text-base leading-tight mt-0.5">{p.name}</h3>
           </div>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 ml-2 ${statusBadge[p.status]}`}>
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 ml-2 whitespace-nowrap ${statusBadge[p.status]}`}>
             {statusLabel[p.status]}
           </span>
         </div>
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full">
+          <span className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full whitespace-nowrap">
             참여기업 {p.companyCount}개사
           </span>
           <span
-            className={`text-xs px-2 py-0.5 rounded-full border ${
+            className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${
               p.agreementSubmitted
                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                 : 'bg-red-50 text-red-600 border-red-200'
@@ -57,9 +57,9 @@ function PartnerCard({ p, lastMeetingDate }: { p: PartnerSummary; lastMeetingDat
         <div className="mt-auto pt-3 border-t border-gray-100">
           {p.kpiCount > 0 ? (
             <div>
-              <div className="flex items-center justify-between mb-1.5 text-xs">
-                <span className="text-gray-500">KPI 달성률 ({p.kpiCount}개 정의)</span>
-                <span className="font-semibold text-gray-800">{p.achievementRate}%</span>
+              <div className="flex items-center justify-between gap-2 mb-1.5 text-xs">
+                <span className="text-gray-500 min-w-0">KPI 달성률 ({p.kpiCount}개 정의)</span>
+                <span className="font-semibold text-gray-800 shrink-0 whitespace-nowrap">{p.achievementRate}%</span>
               </div>
               <RateBar rate={p.achievementRate ?? 0} />
             </div>
@@ -101,7 +101,7 @@ export default function AcceleratingPartnerList({
   });
 
   const pill = (active: boolean) =>
-    `text-xs px-3 py-1.5 rounded-full transition-colors ${
+    `text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
       active
         ? 'bg-blue-600 text-white'
         : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300 hover:text-blue-600'

@@ -56,8 +56,8 @@ export default async function BusinessPartnersPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-8">
-      <div className="flex items-start justify-between mb-8">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">사업파트너 관리</h1>
           <p className="text-gray-500 text-sm mt-1">
             해외 액셀러레이팅 진행 중 — 사업 파트너 {partners.length}곳 · 참여기업·KPI 관리

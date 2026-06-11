@@ -92,12 +92,12 @@ export default async function BusinessPartnerDetailPage({ params }: Props) {
       )}
 
       <div className="flex items-start justify-between mb-6">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-gray-400">No.{partner.no} · {partner.country}</p>
           <h1 className="text-2xl font-bold text-gray-900 mt-0.5">{partner.name}</h1>
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-2">
             <span
-              className={`text-xs px-2 py-0.5 rounded-full border ${
+              className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${
                 partner.agreement_submitted
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-red-50 text-red-600 border-red-200'
@@ -105,10 +105,10 @@ export default async function BusinessPartnerDetailPage({ params }: Props) {
             >
               협약서 {partner.agreement_submitted ? '제출' : '미제출'}
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
+            <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-50 text-gray-600 border-gray-200 whitespace-nowrap">
               참여기업 {matrix.companies.length}개사
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-50 text-gray-600 border-gray-200">
+            <span className="text-xs px-2 py-0.5 rounded-full border bg-gray-50 text-gray-600 border-gray-200 whitespace-nowrap">
               KPI {matrix.kpiDefinitions.length}개
             </span>
           </div>

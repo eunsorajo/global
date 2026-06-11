@@ -66,7 +66,7 @@ export default function RegisterForm({ partners }: { partners: PartnerOption[] }
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">이용 유형</label>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={() => setType('org')} className={typeBtn(type === 'org')}>
             <span className="block font-semibold text-gray-900">조직(SBA) 이용자</span>
             <span className="block text-xs text-gray-500 mt-1">전체 파트너 현황을 관리합니다.</span>

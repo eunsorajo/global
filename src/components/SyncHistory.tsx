@@ -73,7 +73,7 @@ export default function SyncHistory({
           <p className="px-5 py-6 text-sm text-gray-400">백업된 변경이 없습니다.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm break-keep">
               <thead className="bg-gray-50 text-gray-500 text-xs">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">시각</th>
@@ -96,18 +96,18 @@ export default function SyncHistory({
                       <span>{b.new_value ?? '(빈값)'}</span>
                     </td>
                     <td className="px-4 py-2">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 whitespace-nowrap">
                         {REASON_LABEL[b.reason ?? ''] ?? b.reason ?? '-'}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right">
                       {b.restored ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600">복원됨</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 whitespace-nowrap">복원됨</span>
                       ) : (
                         <button
                           onClick={() => rollback(b.id)}
                           disabled={busyId === b.id}
-                          className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                          className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700 hover:bg-gray-100 disabled:opacity-50 whitespace-nowrap"
                         >
                           {busyId === b.id ? '...' : '되돌리기'}
                         </button>
@@ -130,7 +130,7 @@ export default function SyncHistory({
           <p className="px-5 py-6 text-sm text-gray-400">동기화 이력이 없습니다.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm break-keep">
               <thead className="bg-gray-50 text-gray-500 text-xs">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">시각</th>

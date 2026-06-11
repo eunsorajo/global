@@ -156,13 +156,13 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
 
   // -------- 입력 화면 --------
   const tabBtn = (active: boolean) =>
-    `text-sm px-4 py-2 border-b-2 transition-colors ${
+    `text-sm px-4 py-2 border-b-2 transition-colors whitespace-nowrap shrink-0 ${
       active ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'
     }`;
 
   return (
     <div>
-      <div className="flex gap-2 border-b border-gray-200 mb-6">
+      <div className="flex gap-2 border-b border-gray-200 mb-6 overflow-x-auto">
         <button className={tabBtn(tab === 'paste')} onClick={() => setTab('paste')}>
           붙여넣기
         </button>
@@ -190,11 +190,11 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-700">AI 출력 붙여넣기</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-sm font-medium text-gray-700 min-w-0">AI 출력 붙여넣기</p>
               <button
                 onClick={() => setText(SAMPLE)}
-                className="text-xs text-gray-400 hover:text-blue-600"
+                className="text-xs text-gray-400 hover:text-blue-600 shrink-0 whitespace-nowrap"
                 type="button"
               >
                 양식 예시 채우기
@@ -338,9 +338,9 @@ function PreviewPanel({
         ) : (
           <div className="space-y-2">
             {parsed.followups.map((f: ParsedFollowup, i) => (
-              <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                <span className="text-sm text-gray-700">{f.content}</span>
-                <div className="flex gap-2 text-xs text-gray-400 shrink-0">
+              <div key={i} className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                <span className="text-sm text-gray-700 min-w-0 break-words">{f.content}</span>
+                <div className="flex gap-2 text-xs text-gray-400 shrink-0 whitespace-nowrap">
                   {f.assignee && <span>{f.assignee}</span>}
                   {f.dueDate && <span>· {f.dueDate}</span>}
                 </div>

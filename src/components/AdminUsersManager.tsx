@@ -193,7 +193,8 @@ export default function AdminUsersManager({
         {pending.length === 0 ? (
           <p className="px-5 py-6 text-sm text-gray-400">승인 대기 중인 신청이 없습니다.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm break-keep">
             <thead className="bg-gray-50 text-gray-500 text-xs">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">이메일 / 이름</th>
@@ -262,6 +263,7 @@ export default function AdminUsersManager({
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
@@ -319,7 +321,7 @@ export default function AdminUsersManager({
           <button
             onClick={addUser}
             disabled={busy}
-            className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+            className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 whitespace-nowrap"
           >
             + 추가
           </button>
@@ -331,7 +333,8 @@ export default function AdminUsersManager({
         <div className="px-5 py-3 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">활성 사용자 ({active.length})</h3>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm break-keep">
           <thead className="bg-gray-50 text-gray-500 text-xs">
             <tr>
               <th className="text-left px-4 py-3 font-medium">이메일</th>
@@ -390,7 +393,7 @@ export default function AdminUsersManager({
                     <button
                       onClick={() => toggleSuperAdmin(u)}
                       disabled={busy}
-                      className={`text-xs px-2 py-1 rounded-full border disabled:opacity-50 ${
+                      className={`text-xs px-2 py-1 rounded-full border disabled:opacity-50 whitespace-nowrap ${
                         u.is_super_admin
                           ? 'bg-purple-50 text-purple-700 border-purple-200'
                           : 'bg-gray-50 text-gray-500 border-gray-200'
@@ -423,6 +426,7 @@ export default function AdminUsersManager({
             )}
           </tbody>
         </table>
+        </div>
       </section>
     </div>
   );

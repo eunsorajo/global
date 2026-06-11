@@ -45,25 +45,25 @@ export default function PartnerDashboard({ matrix }: { matrix: PartnerMatrix }) 
         <h1 className="text-2xl font-bold mt-0.5">{partner.name}</h1>
         <div className="flex flex-wrap gap-2 mt-3">
           <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
+            className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
               partner.agreement_submitted ? 'bg-white/20 text-white' : 'bg-red-500/30 text-red-50'
             }`}
           >
             협약서 {partner.agreement_submitted ? '제출' : '미제출'}
           </span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-white">참여기업 {companies.length}개사</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-white">KPI {kpiDefinitions.length}개</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-white whitespace-nowrap">참여기업 {companies.length}개사</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-white whitespace-nowrap">KPI {kpiDefinitions.length}개</span>
         </div>
       </div>
 
       {/* KPI 달성 현황 요약 */}
       <section className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-semibold text-gray-900">KPI 달성 현황</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 className="font-semibold text-gray-900 min-w-0">KPI 달성 현황</h2>
           {rate === null ? (
-            <span className="text-sm text-gray-400">KPI 미정의</span>
+            <span className="text-sm text-gray-400 whitespace-nowrap">KPI 미정의</span>
           ) : (
-            <span className="text-sm font-semibold text-gray-700">
+            <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
               달성 {achieved} / 전체 {total} · {rate}%
             </span>
           )}

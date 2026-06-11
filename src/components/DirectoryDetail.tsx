@@ -169,9 +169,9 @@ export default function DirectoryDetail({
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${statusBadge[item.status]}`}>
+      <div className="flex items-start justify-between gap-3 mb-6">
+        <div className="min-w-0">
+          <span className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${statusBadge[item.status]}`}>
             {item.status} 파트너
           </span>
           <h1 className="text-2xl font-bold text-gray-900 mt-2">{item.name}</h1>
@@ -180,7 +180,7 @@ export default function DirectoryDetail({
         {!editing && (
           <button
             onClick={() => { setForm(toForm(item)); setEditing(true); setError(''); }}
-            className="text-sm border border-gray-300 hover:border-blue-400 hover:text-blue-600 px-4 py-2 rounded-lg"
+            className="text-sm border border-gray-300 hover:border-blue-400 hover:text-blue-600 px-4 py-2 rounded-lg shrink-0 whitespace-nowrap"
           >
             편집
           </button>
@@ -192,7 +192,7 @@ export default function DirectoryDetail({
       {/* 상태 변경 */}
       <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
         <p className="text-sm font-semibold text-gray-800 mb-3">상태 변경 (잠재 → 협력 → 사업)</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['잠재', '협력', '사업'] as DirectoryStatus[]).map((s) => (
             <button
               key={s}
@@ -257,11 +257,11 @@ export default function DirectoryDetail({
             <label className="text-xs text-gray-500">메모</label>
             <textarea className={input} rows={3} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>
-          <div className="flex gap-2">
-            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">
               {saving ? '저장 중...' : '저장'}
             </button>
-            <button type="button" onClick={() => { setEditing(false); setError(''); }} className="text-sm text-gray-500 px-4 py-2">
+            <button type="button" onClick={() => { setEditing(false); setError(''); }} className="text-sm text-gray-500 px-4 py-2 whitespace-nowrap">
               취소
             </button>
           </div>
@@ -414,7 +414,7 @@ function FollowupSection({
         <button
           type="submit"
           disabled={adding}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg"
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap"
         >
           {adding ? '추가 중...' : '팔로업 추가'}
         </button>
@@ -454,7 +454,7 @@ function FollowupSection({
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => cycle(f)}
-                    className={`text-xs px-2.5 py-1 rounded-full transition-opacity hover:opacity-80 ${meta.className}`}
+                    className={`text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-opacity hover:opacity-80 ${meta.className}`}
                     title="클릭하여 상태 변경 (대기 → 진행 중 → 완료)"
                   >
                     {meta.label}

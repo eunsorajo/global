@@ -173,8 +173,8 @@ function ProfileSection({
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-800">파트너사 정보</h2>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h2 className="text-sm font-semibold text-gray-800 min-w-0">파트너사 정보</h2>
         {isAdmin && !editing && (
           <button
             onClick={() => {
@@ -182,7 +182,7 @@ function ProfileSection({
               setEditing(true);
               setError('');
             }}
-            className="text-sm border border-gray-300 hover:border-blue-400 hover:text-blue-600 px-3 py-1.5 rounded-lg"
+            className="text-sm border border-gray-300 hover:border-blue-400 hover:text-blue-600 px-3 py-1.5 rounded-lg shrink-0 whitespace-nowrap"
           >
             편집
           </button>
@@ -235,11 +235,11 @@ function ProfileSection({
             <label className="text-xs text-gray-500">메모</label>
             <textarea className={input} rows={3} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>
-          <div className="flex gap-2">
-            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg">
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">
               {saving ? '저장 중...' : '저장'}
             </button>
-            <button type="button" onClick={() => { setEditing(false); setError(''); }} className="text-sm text-gray-500 px-4 py-2">
+            <button type="button" onClick={() => { setEditing(false); setError(''); }} className="text-sm text-gray-500 px-4 py-2 whitespace-nowrap">
               취소
             </button>
           </div>
@@ -351,7 +351,7 @@ function FollowupItem({ initial, isAdmin }: { initial: FollowupWithMeeting; isAd
       <button
         onClick={cycle}
         disabled={saving || !isAdmin}
-        className={`text-xs px-2.5 py-1 rounded-full shrink-0 transition-opacity ${meta.className} ${
+        className={`text-xs px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap transition-opacity ${meta.className} ${
           saving ? 'opacity-50' : isAdmin ? 'hover:opacity-80' : 'cursor-default'
         }`}
         title={isAdmin ? '클릭하여 상태 변경 (대기 → 진행 중 → 완료)' : undefined}

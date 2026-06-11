@@ -47,13 +47,13 @@ export default function KpiPartnerTabs({
   const [tab, setTab] = useState<Tab>(initialTab);
 
   const tabBtn = (active: boolean) =>
-    `text-sm px-4 py-2 border-b-2 transition-colors ${
+    `text-sm px-4 py-2 border-b-2 transition-colors whitespace-nowrap shrink-0 ${
       active ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'
     }`;
 
   return (
     <div>
-      <div className="flex gap-2 border-b border-gray-200 mb-6">
+      <div className="flex gap-2 border-b border-gray-200 mb-6 overflow-x-auto">
         {showInfoTab && (
           <button className={tabBtn(tab === 'info')} onClick={() => setTab('info')}>
             파트너사 정보

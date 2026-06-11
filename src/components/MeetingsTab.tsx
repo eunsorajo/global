@@ -37,7 +37,7 @@ export default function MeetingsTab({ meetings }: { meetings: MeetingWithFollowu
       <div className="flex justify-end">
         <Link
           href="/meetings/new"
-          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
         >
           회의록 가져오기
         </Link>
@@ -58,14 +58,14 @@ function MeetingCard({ meeting }: { meeting: MeetingWithFollowups }) {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-gray-900">{meeting.title}</p>
           <p className="text-xs text-gray-400 mt-0.5">
             {meeting.meeting_date ?? '날짜 미정'}
             {meeting.attendees ? ` · ${meeting.attendees}` : ''}
           </p>
         </div>
-        <span className="text-gray-400 text-sm shrink-0 ml-3">{open ? '접기 ▲' : '펼치기 ▼'}</span>
+        <span className="text-gray-400 text-sm shrink-0 ml-3 whitespace-nowrap">{open ? '접기 ▲' : '펼치기 ▼'}</span>
       </button>
 
       {open && (
@@ -166,7 +166,7 @@ function FollowupRowItem({ initial }: { initial: FollowupRow }) {
       <button
         onClick={cycle}
         disabled={saving}
-        className={`text-xs px-2.5 py-1 rounded-full shrink-0 ml-3 transition-opacity ${meta.className} ${
+        className={`text-xs px-2.5 py-1 rounded-full shrink-0 ml-3 whitespace-nowrap transition-opacity ${meta.className} ${
           saving ? 'opacity-50' : 'hover:opacity-80'
         }`}
         title="클릭하여 상태 변경"

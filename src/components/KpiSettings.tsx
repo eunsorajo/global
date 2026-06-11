@@ -175,8 +175,8 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
 
       {/* 협약서 토글 — 관리자 전용 (partner 에게는 상태만 표시) */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="min-w-0">
             <h3 className="font-semibold text-gray-900">협약서 제출 여부</h3>
             <p className="text-xs text-gray-400 mt-0.5">
               {isAdmin
@@ -187,7 +187,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
           {isAdmin ? (
             <button
               onClick={toggleAgreement}
-              className={`text-sm px-3 py-1.5 rounded-lg border ${
+              className={`text-sm px-3 py-1.5 rounded-lg border shrink-0 whitespace-nowrap ${
                 agreement
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-red-50 text-red-600 border-red-200'
@@ -197,7 +197,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             </button>
           ) : (
             <span
-              className={`text-sm px-3 py-1.5 rounded-lg border ${
+              className={`text-sm px-3 py-1.5 rounded-lg border shrink-0 whitespace-nowrap ${
                 agreement ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-600 border-red-200'
               }`}
             >
@@ -214,13 +214,13 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
 
       {/* KPI 정의 관리 */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">KPI 항목 관리</h3>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <h3 className="font-semibold text-gray-900 min-w-0">KPI 항목 관리</h3>
           {!kpiLocked && defs.length === 0 && (
             <button
               onClick={applyTemplate}
               disabled={busy}
-              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 shrink-0 whitespace-nowrap"
             >
               공통 KPI 4종 템플릿 채우기
             </button>
@@ -232,7 +232,8 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             아직 정의된 KPI 가 없습니다. 위 템플릿 버튼으로 공통 KPI 4종(참가기업 수/사전 컨설팅/비즈니스 매칭/사후 관리)을 한 번에 채우거나, 아래에서 직접 추가하세요.
           </p>
         ) : (
-          <table className="w-full text-sm mb-4">
+          <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm break-keep">
             <thead className="text-xs text-gray-400">
               <tr>
                 <th className="text-left py-2 w-12">순번</th>
@@ -294,6 +295,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {/* 새 KPI 추가 (협약 제출 후 partner 는 비노출) */}
@@ -322,7 +324,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             <label className="block text-xs text-gray-400 mb-0.5">비고</label>
             <input value={newKpi.note} onChange={(e) => setNewKpi({ ...newKpi, note: e.target.value })} className={`${input} w-full`} />
           </div>
-          <button onClick={addKpi} disabled={busy} className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+          <button onClick={addKpi} disabled={busy} className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 whitespace-nowrap">
             + 추가
           </button>
         </div>
@@ -337,7 +339,8 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             아직 등록된 참여기업이 없습니다. 아래에서 추가하세요.
           </p>
         ) : (
-          <table className="w-full text-sm mb-4">
+          <div className="overflow-x-auto mb-4">
+          <table className="w-full text-sm break-keep">
             <thead className="text-xs text-gray-400">
               <tr>
                 <th className="text-left py-2 w-12">순번</th>
@@ -379,6 +382,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         <div className="flex flex-wrap gap-2 items-end border-t border-gray-100 pt-4">
@@ -394,7 +398,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             <label className="block text-xs text-gray-400 mb-0.5">사업내용</label>
             <input value={newCompany.description} onChange={(e) => setNewCompany({ ...newCompany, description: e.target.value })} className={`${input} w-full`} />
           </div>
-          <button onClick={addCompany} disabled={busy} className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+          <button onClick={addCompany} disabled={busy} className="text-sm bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 whitespace-nowrap">
             + 추가
           </button>
         </div>

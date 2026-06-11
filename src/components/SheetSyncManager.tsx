@@ -140,28 +140,28 @@ export default function SheetSyncManager() {
         <button
           onClick={() => call('dryrun')}
           disabled={busy !== null}
-          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
         >
           {busy === 'dryrun' ? '미리보기 계산 중…' : '변경 미리보기 (dry-run)'}
         </button>
         <button
           onClick={() => call('pull')}
           disabled={busy !== null}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
         >
           {busy === 'pull' ? '적용 중…' : '시트 → DB 적용 (pull)'}
         </button>
         <button
           onClick={() => call('push')}
           disabled={busy !== null}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 whitespace-nowrap"
         >
           {busy === 'push' ? '적용 중…' : 'DB → 시트 적용 (push)'}
         </button>
         <button
           onClick={() => call('both')}
           disabled={busy !== null}
-          className="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 disabled:opacity-50 whitespace-nowrap"
         >
           {busy === 'both' ? '적용 중…' : '양방향 (pull → push)'}
         </button>
@@ -223,7 +223,7 @@ export default function SheetSyncManager() {
                     key={`${r.rowNumber}-${r.id ?? 'new'}`}
                     className="rounded-lg border border-gray-200 bg-white p-3 text-sm"
                   >
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <ActionBadge action={r.action} />
                       <span className="font-medium text-gray-900">{r.name || '(이름 없음)'}</span>
                       <span className="text-xs text-gray-400">시트 {r.rowNumber}행</span>
@@ -271,7 +271,7 @@ export default function SheetSyncManager() {
               <div className="space-y-2">
                 {plan.push.rows.map((r) => (
                   <div key={r.id} className="rounded-lg border border-gray-200 bg-white p-3 text-sm">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="rounded bg-emerald-100 text-emerald-700 px-1.5 py-0.5 text-xs font-medium">
                         push
                       </span>
@@ -351,7 +351,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: stri
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   };
   return (
-    <div className={`rounded-lg border px-3 py-2 ${tones[tone] ?? ''}`}>
+    <div className={`rounded-lg border px-3 py-2 whitespace-nowrap ${tones[tone] ?? ''}`}>
       <span className="text-xs">{label}</span>{' '}
       <span className="font-bold">{value}</span>
     </div>
