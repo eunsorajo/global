@@ -1,50 +1,76 @@
-import { dummyPartners } from '@/data/dummy';
-import Link from 'next/link';
-import PartnerList from '@/components/PartnerList';
+import { auth } from '@/auth';
+import LoginNotice from '@/components/LoginNotice';
+import AcceleratingPartnerList from '@/components/AcceleratingPartnerList';
+import DbErrorNotice from '@/components/DbErrorNotice';
+import { getPartnerSummaries, KpiDataError } from '@/lib/kpi-data';
+import { getLatestMeetingDates } from '@/lib/meeting-data';
 
-export default function Home() {
-  const totalFollowUps = dummyPartners
-    .flatMap((p) => p.meetings.flatMap((m) => m.followUps))
-    .filter((f) => f.status === 'pending' || f.status === 'in_progress' || f.status === 'overdue').length;
+export const dynamic = 'force-dynamic';
 
-  const overdueCount = dummyPartners
-    .flatMap((p) => p.meetings.flatMap((m) => m.followUps))
-    .filter((f) => f.status === 'overdue').length;
+export default async function Home() {
+  // 인증 이후에만 데이터 조회
+  const session = await auth();
+  if (!session) return <LoginNotice />;
+
+  let partners;
+  let lastMeetingDates = new Map<string, string>();
+  try {
+    [partners, lastMeetingDates] = await Promise.all([
+      getPartnerSummaries(),
+      getLatestMeetingDates().catch(() => new Map<string, string>()),
+    ]);
+  } catch (e) {
+    const message = e instanceof KpiDataError ? e.message : '데이터베이스 연결에 실패했습니다.';
+    return (
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">파트너 네트워크</h1>
+        <DbErrorNotice message={message} />
+      </main>
+    );
+  }
+
+  const totalCompanies = partners.reduce((s, p) => s + p.companyCount, 0);
+  const submitted = partners.filter((p) => p.agreementSubmitted).length;
+  const submitRate = partners.length > 0 ? Math.round((submitted / partners.length) * 100) : 0;
+
+  // 전체 달성률: KPI 가 정의된 파트너들의 판정 단위 합산
+  const totalUnits = partners.reduce((s, p) => s + p.totalKpiUnits, 0);
+  const achievedUnits = partners.reduce((s, p) => s + p.achievedCount, 0);
+  const overallRate = totalUnits > 0 ? Math.round((achievedUnits / totalUnits) * 100) : 0;
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">파트너 네트워크</h1>
-          <p className="text-gray-500 text-sm mt-1">총 {dummyPartners.length}개 파트너사</p>
-        </div>
-        <Link href="/partners/new" className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          + 파트너사 추가
-        </Link>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">파트너 네트워크</h1>
+        <p className="text-gray-500 text-sm mt-1">
+          해외 액셀러레이팅 프로그램 — 국가별 현지 파트너 {partners.length}곳
+        </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">전체 파트너사</p>
-          <p className="text-2xl font-bold text-gray-900">{dummyPartners.length}</p>
+          <p className="text-xs text-gray-500 mb-1">전체 파트너</p>
+          <p className="text-2xl font-bold text-gray-900">{partners.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">전략 파트너</p>
-          <p className="text-2xl font-bold text-purple-600">
-            {dummyPartners.filter((p) => p.grade === '전략 파트너').length}
-          </p>
+          <p className="text-xs text-gray-500 mb-1">참여기업 총수</p>
+          <p className="text-2xl font-bold text-blue-600">{totalCompanies}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">미완료 팔로업</p>
-          <p className="text-2xl font-bold text-orange-500">{totalFollowUps}</p>
+          <p className="text-xs text-gray-500 mb-1">협약 제출 비율</p>
+          <p className="text-2xl font-bold text-purple-600">{submitRate}%</p>
+          <p className="text-xs text-gray-400 mt-0.5">{submitted}/{partners.length}곳</p>
         </div>
-        <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-          <p className="text-xs text-red-500 mb-1">기한 초과</p>
-          <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 mb-1">전체 KPI 달성률</p>
+          <p className="text-2xl font-bold text-green-600">{overallRate}%</p>
         </div>
       </div>
 
-      <PartnerList partners={dummyPartners} />
+      <AcceleratingPartnerList
+        partners={partners}
+        lastMeetingDates={Object.fromEntries(lastMeetingDates)}
+      />
     </main>
   );
 }
