@@ -15,10 +15,12 @@ interface PartnerOption {
   country: string;
 }
 
-interface DirectoryTarget {
+// 협력/잠재 파트너 선택지 (수동 연결 드롭다운용)
+interface DirectoryOption {
   id: string;
   name: string;
-  status: string | null;
+  status: string;
+  country: string | null;
 }
 
 const SAMPLE = `[파트너] 파트너명
@@ -35,7 +37,13 @@ const SAMPLE = `[파트너] 파트너명
 [팔로업]
 - 후속 작업 내용 | 담당자 | 2026-06-01`;
 
-export default function MeetingImportForm({ partners }: { partners: PartnerOption[] }) {
+export default function MeetingImportForm({
+  partners,
+  directoryOptions,
+}: {
+  partners: PartnerOption[];
+  directoryOptions: DirectoryOption[];
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('paste');
 
@@ -45,7 +53,7 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
   const [parsed, setParsed] = useState<ParsedMeeting | null>(null);
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [mode, setMode] = useState<SaveMode>('business');
-  const [directoryTarget, setDirectoryTarget] = useState<DirectoryTarget | null>(null);
+  const [selectedDirectoryId, setSelectedDirectoryId] = useState('');
   const [newCountry, setNewCountry] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -70,23 +78,19 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
     if (p.matchedPartnerId) {
       // 사업 파트너 확정 매칭 → 회의록 저장
       setMode('business');
-      setDirectoryTarget(null);
+      setSelectedDirectoryId('');
     } else if (p.matchedDirectoryId) {
       // 협력/잠재 파트너 확정 매칭 → 해당 파트너 기록에 저장
       setMode('directory');
-      setDirectoryTarget({
-        id: p.matchedDirectoryId,
-        name: p.matchedDirectoryName ?? '',
-        status: p.matchedDirectoryStatus ?? null,
-      });
+      setSelectedDirectoryId(p.matchedDirectoryId);
     } else if (p.partnerName && (p.matchSuggestions?.length ?? 0) === 0) {
       // 어디에도 없는 회사 → 신규 잠재 파트너 등록을 기본 제안
       setMode('new');
-      setDirectoryTarget(null);
+      setSelectedDirectoryId('');
     } else {
       // 유사 후보가 있으면 사용자가 후보 클릭으로 확정
       setMode('business');
-      setDirectoryTarget(null);
+      setSelectedDirectoryId('');
     }
   }
 
@@ -95,10 +99,10 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
     if (s.kind === 'business') {
       setMode('business');
       setSelectedPartnerId(s.id);
-      setDirectoryTarget(null);
+      setSelectedDirectoryId('');
     } else {
       setMode('directory');
-      setDirectoryTarget({ id: s.id, name: s.name, status: s.status ?? null });
+      setSelectedDirectoryId(s.id);
       setSelectedPartnerId('');
     }
   }
@@ -150,8 +154,8 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
       setError('파트너를 선택하거나, 협력·잠재/신규 등록 옵션을 선택해주세요.');
       return;
     }
-    if (mode === 'directory' && !directoryTarget) {
-      setError('대상 파트너가 없습니다. 다시 선택해주세요.');
+    if (mode === 'directory' && !selectedDirectoryId) {
+      setError('연결할 협력·잠재 파트너를 드롭다운에서 선택해주세요.');
       return;
     }
     if (mode === 'new' && !parsed.partnerName?.trim()) {
@@ -190,7 +194,7 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...(mode === 'directory'
-            ? { directoryId: directoryTarget!.id }
+            ? { directoryId: selectedDirectoryId }
             : { createNew: { name: parsed.partnerName, country: newCountry || null } }),
           meetingDate: parsed.meetingDate,
           title: parsed.title,
@@ -215,7 +219,7 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
     setParsed(null);
     setSelectedPartnerId('');
     setMode('business');
-    setDirectoryTarget(null);
+    setSelectedDirectoryId('');
     setNewCountry('');
     setError('');
   }
@@ -233,7 +237,12 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
           setSelectedPartnerId(id);
           if (id) setMode('business');
         }}
-        directoryTarget={directoryTarget}
+        directoryOptions={directoryOptions}
+        selectedDirectoryId={selectedDirectoryId}
+        onSelectDirectory={(id) => {
+          setSelectedDirectoryId(id);
+          if (id) setMode('directory');
+        }}
         newCountry={newCountry}
         onNewCountry={setNewCountry}
         onPickSuggestion={pickSuggestion}
@@ -362,7 +371,9 @@ function PreviewPanel({
   onMode,
   selectedPartnerId,
   onSelectPartner,
-  directoryTarget,
+  directoryOptions,
+  selectedDirectoryId,
+  onSelectDirectory,
   newCountry,
   onNewCountry,
   onPickSuggestion,
@@ -377,7 +388,9 @@ function PreviewPanel({
   onMode: (m: SaveMode) => void;
   selectedPartnerId: string;
   onSelectPartner: (id: string) => void;
-  directoryTarget: DirectoryTarget | null;
+  directoryOptions: DirectoryOption[];
+  selectedDirectoryId: string;
+  onSelectDirectory: (id: string) => void;
   newCountry: string;
   onNewCountry: (v: string) => void;
   onPickSuggestion: (s: PartnerMatchSuggestion) => void;
@@ -391,7 +404,7 @@ function PreviewPanel({
     saving ||
     !parsed.title.trim() ||
     (mode === 'business' && !selectedPartnerId) ||
-    (mode === 'directory' && !directoryTarget) ||
+    (mode === 'directory' && !selectedDirectoryId) ||
     (mode === 'new' && !parsed.partnerName?.trim());
   const saveLabel =
     mode === 'directory'
@@ -471,8 +484,8 @@ function PreviewPanel({
           )}
         </label>
 
-        {/* 2) 기존 협력/잠재 파트너 기록 */}
-        {directoryTarget && (
+        {/* 2) 기존 협력/잠재 파트너 기록 (수동 연결 드롭다운 상시 제공) */}
+        {directoryOptions.length > 0 && (
           <label className={`block rounded-lg border p-3 cursor-pointer ${mode === 'directory' ? 'border-indigo-400 bg-indigo-50/50' : 'border-gray-200'}`}>
             <span className="flex items-center gap-2 text-sm text-gray-800 flex-wrap">
               <input
@@ -481,13 +494,31 @@ function PreviewPanel({
                 checked={mode === 'directory'}
                 onChange={() => onMode('directory')}
               />
-              <span className="font-medium">
-                {directoryTarget.status ?? ''} 파트너 &quot;{directoryTarget.name}&quot; 기록에 저장
-              </span>
+              <span className="font-medium">기존 협력·잠재 파트너 기록에 저장 (연결하기)</span>
+              {parsed.matchedDirectoryId &&
+                mode === 'directory' &&
+                selectedDirectoryId === parsed.matchedDirectoryId && (
+                  <span className="text-xs text-green-600 whitespace-nowrap">· 자동 인식됨</span>
+                )}
             </span>
             <span className="block mt-1 ml-5 text-xs text-gray-500">
               메모·향후 협업계획·최근 접촉일이 업데이트되고, 팔로업이 등록됩니다.
             </span>
+            {mode === 'directory' && (
+              <select
+                value={selectedDirectoryId}
+                onChange={(e) => onSelectDirectory(e.target.value)}
+                className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+              >
+                <option value="">협력·잠재 파트너를 선택하세요...</option>
+                {directoryOptions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    [{d.status}] {d.name}
+                    {d.country ? ` (${d.country})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         )}
 

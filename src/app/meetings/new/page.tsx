@@ -5,6 +5,7 @@ import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import MeetingImportForm from '@/components/MeetingImportForm';
 import { getPartnerOptions, MeetingDataError } from '@/lib/meeting-data';
+import { getDirectoryMatchCandidates, DirectoryDataError } from '@/lib/directory-data';
 import { pageGate } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -23,10 +24,17 @@ export default async function ImportMeetingPage() {
   }
 
   let partners;
+  let directoryOptions;
   try {
-    partners = await getPartnerOptions();
+    [partners, directoryOptions] = await Promise.all([
+      getPartnerOptions(),
+      getDirectoryMatchCandidates(),
+    ]);
   } catch (e) {
-    const message = e instanceof MeetingDataError ? e.message : '데이터베이스 연결에 실패했습니다.';
+    const message =
+      e instanceof MeetingDataError || e instanceof DirectoryDataError
+        ? e.message
+        : '데이터베이스 연결에 실패했습니다.';
     return (
       <main className="max-w-3xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">회의록 가져오기</h1>
@@ -43,7 +51,7 @@ export default async function ImportMeetingPage() {
           외부 AI(ChatGPT/Gemini)로 정리한 회의록을 붙여넣거나 엑셀로 업로드하세요.
         </p>
       </div>
-      <MeetingImportForm partners={partners} />
+      <MeetingImportForm partners={partners} directoryOptions={directoryOptions} />
     </main>
   );
 }
