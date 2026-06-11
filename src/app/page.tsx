@@ -1,21 +1,26 @@
 import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import PendingNotice from '@/components/PendingNotice';
 import AcceleratingPartnerList from '@/components/AcceleratingPartnerList';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import { getPartnerSummaries, KpiDataError } from '@/lib/kpi-data';
 import { getLatestMeetingDates } from '@/lib/meeting-data';
-import { getSessionUser } from '@/lib/rbac';
+import { pageGate } from '@/lib/rbac';
 import Forbidden from '@/components/Forbidden';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  // 인증 이후에만 데이터 조회
-  const user = await getSessionUser();
-  if (!user) return <LoginNotice />;
-  // partner 는 파트너 목록 전체를 볼 수 없음 → 자기 KPI 로 이동
+  // 가입 게이트: 미인증/미신청/승인대기 처리
+  const gate = await pageGate();
+  if (gate.state === 'login') return <LoginNotice />;
+  if (gate.state === 'register') redirect('/register');
+  if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
+  const user = gate.user;
+
+  // partner 는 파트너 목록 전체를 볼 수 없음 → 자기 대시보드로 이동
   if (user.role !== 'admin') {
-    if (user.partnerId) redirect(`/kpi/${user.partnerId}`);
+    if (user.partnerId) redirect(`/partner`);
     // 파트너 매핑이 없는 비정상 상태 (DB 제약상 발생하지 않아야 함)
     return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 관리자에게 문의해주세요." />;
   }

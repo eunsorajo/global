@@ -1,12 +1,13 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import PendingNotice from '@/components/PendingNotice';
 import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import KpiPartnerTabs from '@/components/KpiPartnerTabs';
 import { getPartnerMatrix, KpiDataError } from '@/lib/kpi-data';
 import { getMeetingsByPartner } from '@/lib/meeting-data';
-import { getSessionUser } from '@/lib/rbac';
+import { pageGate } from '@/lib/rbac';
 import type { MeetingWithFollowups } from '@/types/meeting';
 
 export const dynamic = 'force-dynamic';
@@ -18,19 +19,24 @@ interface Props {
 export default async function PartnerKpiPage({ params }: Props) {
   const { partnerId } = await params;
 
-  // 인증 이후에만 데이터 조회
-  const user = await getSessionUser();
-  if (!user) return <LoginNotice />;
+  // 가입 게이트
+  const gate = await pageGate();
+  if (gate.state === 'login') return <LoginNotice />;
+  if (gate.state === 'register') redirect('/register');
+  if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
+  const user = gate.user;
 
   // RBAC: admin 은 모든 파트너, partner 는 자기 partnerId 만.
   if (user.role !== 'admin' && user.partnerId !== partnerId) {
     return (
       <Forbidden
         message="다른 파트너의 KPI 페이지에는 접근할 수 없습니다."
-        homeHref={user.partnerId ? `/kpi/${user.partnerId}` : undefined}
+        homeHref="/partner"
       />
     );
   }
+  // 파트너 본인은 전용 대시보드로 안내 (이 경로는 관리자 전용 레이아웃)
+  if (user.role !== 'admin') redirect('/partner');
   const isAdmin = user.role === 'admin';
 
   let matrix;

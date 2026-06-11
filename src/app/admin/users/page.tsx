@@ -1,22 +1,28 @@
+import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import PendingNotice from '@/components/PendingNotice';
 import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import AdminUsersManager from '@/components/AdminUsersManager';
-import { getSessionUser } from '@/lib/rbac';
+import { pageGate } from '@/lib/rbac';
 import { listUsers, UserDataError } from '@/lib/user-data';
 import { getPartnerOptions, MeetingDataError } from '@/lib/meeting-data';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminUsersPage() {
-  // 인증 + 관리자 검증 (서버 측 집행)
-  const user = await getSessionUser();
-  if (!user) return <LoginNotice />;
-  if (user.role !== 'admin') {
+  // 가입 게이트
+  const gate = await pageGate();
+  if (gate.state === 'login') return <LoginNotice />;
+  if (gate.state === 'register') redirect('/register');
+  if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
+  const user = gate.user;
+  // 사용자 관리 + 가입 승인은 최고관리자 전용 (서버 측 집행)
+  if (!user.isSuperAdmin) {
     return (
       <Forbidden
-        message="사용자 관리는 관리자만 접근할 수 있습니다."
-        homeHref={user.partnerId ? `/kpi/${user.partnerId}` : undefined}
+        message="사용자 관리·가입 승인은 최고관리자만 접근할 수 있습니다."
+        homeHref={user.role === 'admin' ? '/' : '/partner'}
       />
     );
   }

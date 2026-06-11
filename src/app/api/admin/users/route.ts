@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireSuperAdmin, errorResponse } from '@/lib/rbac';
 import { listUsers, getUserByEmail, UserDataError } from '@/lib/user-data';
 
 // GET: 사용자 목록 (관리자 전용)
 export async function GET() {
   try {
-    await requireAdmin();
+    await requireSuperAdmin();
   } catch (e) {
     return errorResponse(e);
   }
@@ -27,7 +27,7 @@ export async function GET() {
 //   - admin 역할이면 partnerId 는 무시(null 저장)
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin();
+    await requireSuperAdmin();
   } catch (e) {
     return errorResponse(e);
   }
@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
       name: body.name?.trim() || null,
       role: body.role,
       partner_id: partnerId,
+      // 최고관리자가 직접 추가한 계정은 즉시 사용 가능(승인 단계 생략).
+      status: 'active',
+      is_super_admin: false,
     })
     .select('*')
     .single();

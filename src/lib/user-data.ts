@@ -2,7 +2,7 @@
 // RBAC: 로그인 허용 여부 + 역할/파트너 매핑의 단일 소스.
 import 'server-only';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import type { UserRole } from '@/types/next-auth';
+import type { UserRole, UserStatus } from '@/types/next-auth';
 
 export class UserDataError extends Error {}
 
@@ -12,6 +12,8 @@ export interface UserRow {
   name: string | null;
   role: UserRole;
   partner_id: string | null;
+  status: UserStatus;
+  is_super_admin: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -58,6 +60,8 @@ export async function listUsers(): Promise<UserWithPartner[]> {
     name: u.name,
     role: u.role,
     partner_id: u.partner_id,
+    status: u.status,
+    is_super_admin: u.is_super_admin,
     created_at: u.created_at,
     updated_at: u.updated_at,
     partner_name: u.partners?.name ?? null,
@@ -74,4 +78,45 @@ export async function countAdmins(): Promise<number> {
     .eq('role', 'admin');
   if (error) throw new UserDataError(describeSupabaseError(error));
   return count ?? 0;
+}
+
+// 최고관리자(active) 수 — 마지막 최고관리자 삭제/강등 방지 가드용.
+// 거부(삭제)·강등 시 최소 1명의 active 최고관리자가 남도록 보장한다.
+export async function countActiveSuperAdmins(): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_super_admin', true)
+    .eq('status', 'active');
+  if (error) throw new UserDataError(describeSupabaseError(error));
+  return count ?? 0;
+}
+
+// 본인 가입 신청: users row 를 status='pending' 으로 생성.
+//   - role: 조직(SBA) 이용자 → 'admin', 파트너사 → 'partner'
+//   - partner 역할이면 partner_id 필수
+//   - is_super_admin 은 항상 false (최고관리자 승격은 별도 권한)
+// 이미 row 가 있으면 호출하지 않는다(상위에서 차단). DB 유니크 위반 시 에러.
+export async function createSelfRegistration(input: {
+  email: string;
+  name: string | null;
+  role: UserRole;
+  partnerId: string | null;
+}): Promise<UserRow> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('users')
+    .insert({
+      email: input.email,
+      name: input.name,
+      role: input.role,
+      partner_id: input.role === 'partner' ? input.partnerId : null,
+      status: 'pending',
+      is_super_admin: false,
+    })
+    .select('*')
+    .single();
+  if (error) throw new UserDataError(describeSupabaseError(error));
+  return data as UserRow;
 }

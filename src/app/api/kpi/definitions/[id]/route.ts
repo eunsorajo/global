@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
 import { getKpiDefinitionPartnerId, getPartnerAgreement } from '@/lib/kpi-data';
 
 // KPI 정의 수정 (항목명/목표/구분/비고 또는 파트너 레벨 achieved 토글)
@@ -10,7 +10,7 @@ import { getKpiDefinitionPartnerId, getPartnerAgreement } from '@/lib/kpi-data';
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }
@@ -83,7 +83,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }

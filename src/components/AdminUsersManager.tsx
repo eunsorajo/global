@@ -33,6 +33,12 @@ export default function AdminUsersManager({
     partnerId: '',
   });
 
+  // 승인 시 역할·소속 확정용 임시 상태 (pending row id → 선택값)
+  const [approveDraft, setApproveDraft] = useState<Record<string, { role: UserRole; partnerId: string }>>({});
+
+  const pending = users.filter((u) => u.status === 'pending');
+  const active = users.filter((u) => u.status === 'active');
+
   async function call(url: string, method: string, body?: unknown) {
     setError(null);
     const res = await fetch(url, {
@@ -43,6 +49,15 @@ export default function AdminUsersManager({
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error ?? '요청 실패');
     return data;
+  }
+
+  async function reload() {
+    try {
+      const { users: fresh } = await call('/api/admin/users', 'GET');
+      setUsers(fresh);
+    } catch {
+      /* 무시: router.refresh 로도 갱신됨 */
+    }
   }
 
   async function addUser() {
@@ -65,21 +80,11 @@ export default function AdminUsersManager({
       });
       setForm({ email: '', name: '', role: 'partner', partnerId: '' });
       router.refresh();
-      // 서버에서 최신 목록을 다시 받기 위해 새로고침에 의존하되, 즉시 반영을 위해 재조회.
       await reload();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function reload() {
-    try {
-      const { users: fresh } = await call('/api/admin/users', 'GET');
-      setUsers(fresh);
-    } catch {
-      /* 무시: 화면은 router.refresh 로도 갱신됨 */
     }
   }
 
@@ -97,8 +102,61 @@ export default function AdminUsersManager({
     }
   }
 
+  async function toggleSuperAdmin(u: UserWithPartner) {
+    const next = !u.is_super_admin;
+    if (!confirm(next ? `'${u.email}' 을(를) 최고관리자로 지정할까요?` : `'${u.email}' 의 최고관리자 권한을 해제할까요?`)) return;
+    setBusy(true);
+    try {
+      await call(`/api/admin/users/${u.id}`, 'PATCH', { isSuperAdmin: next });
+      await reload();
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approve(u: UserWithPartner) {
+    const draft = approveDraft[u.id] ?? { role: u.role, partnerId: u.partner_id ?? '' };
+    if (draft.role === 'partner' && !draft.partnerId) {
+      setError('파트너 역할은 소속 파트너사를 선택해야 합니다.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await call(`/api/admin/users/${u.id}`, 'PATCH', {
+        status: 'active',
+        role: draft.role,
+        partnerId: draft.role === 'partner' ? draft.partnerId : null,
+      });
+      await reload();
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reject(u: UserWithPartner) {
+    if (!confirm(`'${u.email}' 의 가입 신청을 거부(삭제)하시겠습니까?`)) return;
+    setBusy(true);
+    try {
+      await call(`/api/admin/users/${u.id}`, 'DELETE');
+      setUsers((list) => list.filter((x) => x.id !== u.id));
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteUser(u: UserWithPartner) {
-    if (!confirm(`'${u.email}' 계정을 삭제하시겠습니까? 해당 계정은 더 이상 로그인할 수 없습니다.`)) return;
+    if (!confirm(`'${u.email}' 계정을 삭제하시겠습니까? 해당 계정은 더 이상 이용할 수 없습니다.`)) return;
     setBusy(true);
     try {
       await call(`/api/admin/users/${u.id}`, 'DELETE');
@@ -113,15 +171,104 @@ export default function AdminUsersManager({
 
   const input = 'border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400';
 
+  function draftFor(u: UserWithPartner) {
+    return approveDraft[u.id] ?? { role: u.role, partnerId: u.partner_id ?? '' };
+  }
+  function setDraft(id: string, patch: Partial<{ role: UserRole; partnerId: string }>) {
+    setApproveDraft((d) => ({ ...d, [id]: { ...(d[id] ?? { role: 'partner', partnerId: '' }), ...patch } }));
+  }
+
   return (
     <div className="space-y-8">
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>
       )}
 
-      {/* 사용자 추가 */}
+      {/* 승인 대기 */}
+      <section className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+        <div className="bg-amber-50 px-5 py-3 border-b border-amber-200 flex items-center gap-2">
+          <h3 className="font-semibold text-amber-800">승인 대기</h3>
+          <span className="text-xs bg-amber-200 text-amber-800 rounded-full px-2 py-0.5">{pending.length}</span>
+        </div>
+        {pending.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-400">승인 대기 중인 신청이 없습니다.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500 text-xs">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium">이메일 / 이름</th>
+                <th className="text-left px-4 py-3 font-medium w-28">신청 역할</th>
+                <th className="text-left px-4 py-3 font-medium w-56">소속 파트너</th>
+                <th className="px-4 py-3 w-40"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {pending.map((u) => {
+                const d = draftFor(u);
+                return (
+                  <tr key={u.id} className="hover:bg-amber-50/40">
+                    <td className="px-4 py-3">
+                      <span className="text-gray-900 block">{u.email}</span>
+                      <span className="text-gray-500 text-xs">{u.name ?? '-'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={d.role}
+                        disabled={busy}
+                        onChange={(e) => setDraft(u.id, { role: e.target.value as UserRole })}
+                        className={`${input} disabled:opacity-50`}
+                      >
+                        <option value="partner">파트너</option>
+                        <option value="admin">관리자(조직)</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      {d.role === 'partner' ? (
+                        <select
+                          value={d.partnerId}
+                          disabled={busy}
+                          onChange={(e) => setDraft(u.id, { partnerId: e.target.value })}
+                          className={`${input} w-full disabled:opacity-50`}
+                        >
+                          <option value="">선택하세요</option>
+                          {partners.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.country} / {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-gray-400 text-xs">전체 (관리자)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => approve(u)}
+                        disabled={busy}
+                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 mr-2"
+                      >
+                        승인
+                      </button>
+                      <button
+                        onClick={() => reject(u)}
+                        disabled={busy}
+                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                      >
+                        거부
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* 사용자 추가 (즉시 활성) */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">사용자 추가</h3>
+        <h3 className="font-semibold text-gray-900 mb-1">사용자 직접 추가</h3>
+        <p className="text-xs text-gray-400 mb-4">추가한 계정은 즉시 활성(active) 상태가 됩니다.</p>
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs text-gray-400 mb-0.5">이메일 *</label>
@@ -179,8 +326,11 @@ export default function AdminUsersManager({
         </div>
       </section>
 
-      {/* 사용자 목록 */}
+      {/* 활성 사용자 목록 */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">활성 사용자 ({active.length})</h3>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs">
             <tr>
@@ -188,11 +338,12 @@ export default function AdminUsersManager({
               <th className="text-left px-4 py-3 font-medium">이름</th>
               <th className="text-left px-4 py-3 font-medium w-28">역할</th>
               <th className="text-left px-4 py-3 font-medium w-56">매핑 파트너</th>
+              <th className="text-center px-4 py-3 font-medium w-28">최고관리자</th>
               <th className="px-4 py-3 w-16"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.map((u) => {
+            {active.map((u) => {
               const isSelf = u.email.toLowerCase() === currentEmail.toLowerCase();
               return (
                 <tr key={u.id} className="hover:bg-gray-50">
@@ -207,7 +358,6 @@ export default function AdminUsersManager({
                       disabled={busy}
                       onChange={(e) => {
                         const role = e.target.value as UserRole;
-                        // partner 로 바꾸면 파트너 선택이 필요 → 기존 매핑 없으면 첫 파트너로 유도
                         const partnerId = role === 'partner' ? (u.partner_id ?? partners[0]?.id ?? null) : null;
                         changeRole(u, role, partnerId);
                       }}
@@ -236,6 +386,20 @@ export default function AdminUsersManager({
                       <span className="text-gray-400 text-xs">전체 (관리자)</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => toggleSuperAdmin(u)}
+                      disabled={busy}
+                      className={`text-xs px-2 py-1 rounded-full border disabled:opacity-50 ${
+                        u.is_super_admin
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                      title="최고관리자 권한 토글"
+                    >
+                      {u.is_super_admin ? '최고관리자' : '일반'}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     {!isSelf && (
                       <button
@@ -250,10 +414,10 @@ export default function AdminUsersManager({
                 </tr>
               );
             })}
-            {users.length === 0 && (
+            {active.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">
-                  등록된 사용자가 없습니다.
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">
+                  활성 사용자가 없습니다.
                 </td>
               </tr>
             )}

@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import PendingNotice from '@/components/PendingNotice';
 import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import { getPartnerSummaries, KpiDataError } from '@/lib/kpi-data';
-import { getSessionUser } from '@/lib/rbac';
+import { pageGate } from '@/lib/rbac';
 import KpiExportButton from '@/components/KpiExportButton';
 import type { PartnerStatus } from '@/types/accelerating';
 
@@ -23,13 +24,16 @@ const statusBadge: Record<PartnerStatus, string> = {
 };
 
 export default async function KpiDashboardPage() {
-  // 인증 이후에만 데이터 조회
-  const user = await getSessionUser();
-  if (!user) return <LoginNotice />;
-  // 현황판은 관리자 전용. partner 는 자기 KPI 로.
+  // 가입 게이트
+  const gate = await pageGate();
+  if (gate.state === 'login') return <LoginNotice />;
+  if (gate.state === 'register') redirect('/register');
+  if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
+  const user = gate.user;
+  // 현황판은 관리자 전용. partner 는 자기 대시보드로.
   if (user.role !== 'admin') {
-    if (user.partnerId) redirect(`/kpi/${user.partnerId}`);
-    return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 관리자에게 문의해주세요." />;
+    if (user.partnerId) redirect('/partner');
+    return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 최고관리자에게 문의해주세요." />;
   }
 
   let partners;

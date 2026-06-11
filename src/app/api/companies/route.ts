@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
 
 // 참여기업 추가
 // 권한: admin, 또는 partner 가 자기 파트너에 추가할 때만.
 export async function POST(req: NextRequest) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }

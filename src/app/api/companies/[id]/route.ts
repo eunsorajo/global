@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
 import { getCompanyPartnerId } from '@/lib/kpi-data';
 
 // 참여기업 수정
@@ -8,7 +8,7 @@ import { getCompanyPartnerId } from '@/lib/kpi-data';
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }
@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }

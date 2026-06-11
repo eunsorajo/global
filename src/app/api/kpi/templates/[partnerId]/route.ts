@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
 import { getPartnerAgreement } from '@/lib/kpi-data';
 
 // 공통 KPI 4종 템플릿 1클릭 채우기.
@@ -15,7 +15,7 @@ const COMMON_KPI_TEMPLATE = [
 export async function POST(req: NextRequest, ctx: { params: Promise<{ partnerId: string }> }) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }

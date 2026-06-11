@@ -3,12 +3,11 @@ import 'next-auth/jwt';
 
 // RBAC 역할
 export type UserRole = 'admin' | 'partner';
+// 가입 승인 상태
+export type UserStatus = 'pending' | 'active';
 
 declare module 'next-auth' {
   interface Session {
-    accessToken?: string;
-    // access token 갱신 실패 시 플래그 (재로그인 유도용)
-    error?: string;
     user: {
       // RBAC: users 테이블에서 실어온 값
       role?: UserRole;
@@ -16,19 +15,23 @@ declare module 'next-auth' {
       email?: string | null;
       name?: string | null;
       image?: string | null;
+      // 가입 신청/승인 흐름
+      registered?: boolean; // users row 존재 여부 (false = 미신청)
+      status?: UserStatus; // 'pending' | 'active' (미등록이면 undefined)
+      isSuperAdmin?: boolean; // 최고관리자(가입 승인 권한)
     };
   }
 }
 
 declare module 'next-auth/jwt' {
   interface JWT {
-    accessToken?: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    error?: string;
     // RBAC
     role?: UserRole;
     partnerId?: string | null;
     email?: string | null;
+    // 가입 신청/승인 흐름
+    registered?: boolean;
+    status?: UserStatus;
+    isSuperAdmin?: boolean;
   }
 }

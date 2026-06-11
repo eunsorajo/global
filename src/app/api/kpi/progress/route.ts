@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
 import { getCompanyPartnerId } from '@/lib/kpi-data';
 
 // 매트릭스 셀(기업 × KPI) 진척도 저장 (upsert).
@@ -11,7 +11,7 @@ import { getCompanyPartnerId } from '@/lib/kpi-data';
 export async function POST(req: NextRequest) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }

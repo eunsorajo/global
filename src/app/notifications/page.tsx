@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import PendingNotice from '@/components/PendingNotice';
 import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import { getNotifications, NotificationDataError } from '@/lib/notification-data';
 import type { NotificationLevel } from '@/lib/notification-data';
-import { getSessionUser } from '@/lib/rbac';
+import { pageGate } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,13 +20,16 @@ const levelConfig: Record<
 };
 
 export default async function NotificationsPage() {
-  // 인증 이후에만 데이터 조회
-  const user = await getSessionUser();
-  if (!user) return <LoginNotice />;
+  // 가입 게이트
+  const gate = await pageGate();
+  if (gate.state === 'login') return <LoginNotice />;
+  if (gate.state === 'register') redirect('/register');
+  if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
+  const user = gate.user;
   // 알림은 관리자 전용 내부 운영 메뉴. partner 차단.
   if (user.role !== 'admin') {
-    if (user.partnerId) redirect(`/kpi/${user.partnerId}`);
-    return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 관리자에게 문의해주세요." />;
+    if (user.partnerId) redirect('/partner');
+    return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 최고관리자에게 문의해주세요." />;
   }
 
   let result;

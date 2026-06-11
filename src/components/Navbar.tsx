@@ -5,14 +5,17 @@ import { getNotificationBadgeCount } from '@/lib/notification-data';
 export default async function Navbar() {
   const session = await auth();
   const role = session?.user?.role;
-  const partnerId = session?.user?.partnerId ?? null;
-  const isAdmin = role === 'admin';
+  const status = session?.user?.status;
+  const isSuperAdmin = session?.user?.isSuperAdmin ?? false;
+  const isActive = status === 'active';
+  const isAdmin = role === 'admin' && isActive;
+  const isPartner = role === 'partner' && isActive;
 
-  // 알림 카운트는 관리자에게만 의미가 있으므로 admin 일 때만 계산.
+  // 알림 카운트는 활성 관리자에게만 의미가 있으므로 그때만 계산.
   const badgeCount = isAdmin ? await getNotificationBadgeCount() : 0;
 
-  // 로그인 후 브랜드 링크 목적지: partner 는 자기 KPI, admin/기타는 홈.
-  const brandHref = role === 'partner' && partnerId ? `/kpi/${partnerId}` : '/';
+  // 로그인 후 브랜드 링크 목적지: partner 는 자기 대시보드, admin/기타는 홈.
+  const brandHref = isPartner ? '/partner' : '/';
 
   return (
     <nav className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -25,14 +28,15 @@ export default async function Navbar() {
           <>
             <Link href="/" className="hover:text-blue-600 transition-colors">파트너 목록</Link>
             <Link href="/kpi" className="hover:text-blue-600 transition-colors">KPI 관리</Link>
-            <Link href="/calendar" className="hover:text-blue-600 transition-colors">회의 일정</Link>
             <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 가져오기</Link>
-            <Link href="/admin/users" className="hover:text-blue-600 transition-colors">사용자 관리</Link>
+            {isSuperAdmin && (
+              <Link href="/admin/users" className="hover:text-blue-600 transition-colors">사용자 관리</Link>
+            )}
           </>
         )}
 
-        {role === 'partner' && partnerId && (
-          <Link href={`/kpi/${partnerId}`} className="hover:text-blue-600 transition-colors">내 KPI</Link>
+        {isPartner && (
+          <Link href="/partner" className="hover:text-blue-600 transition-colors">내 대시보드</Link>
         )}
 
         {session ? (

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
-import { requireUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
+import { requireActiveUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
 import { getPartnerAgreement } from '@/lib/kpi-data';
 
 // KPI 정의 생성 (파트너별)
@@ -8,7 +8,7 @@ import { getPartnerAgreement } from '@/lib/kpi-data';
 export async function POST(req: NextRequest) {
   let session;
   try {
-    session = await requireUser();
+    session = await requireActiveUser();
   } catch (e) {
     return errorResponse(e);
   }
