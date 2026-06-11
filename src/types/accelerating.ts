@@ -70,6 +70,51 @@ export interface PartnerSummary {
   totalKpiUnits: number;
 }
 
+// ---------- 파트너 디렉토리 (2계층: 사업/협력/잠재) ----------
+
+// 관계 단계 상태. 잠재 → 협력 → 사업 순으로 승격.
+export type DirectoryStatus = '사업' | '협력' | '잠재';
+
+// partner_directory row (snake_case, Supabase 응답과 1:1)
+export interface PartnerDirectoryRow {
+  id: string;
+  name: string;
+  country: string | null;
+  status: DirectoryStatus;
+  sector: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  website: string | null;
+  last_contact_date: string | null; // date (YYYY-MM-DD)
+  discovery_note: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// 디렉토리 목록 항목 (행 클릭 분기를 위해 사업 파트너의 partners.id 동봉)
+export interface DirectoryListItem extends PartnerDirectoryRow {
+  // status='사업' 이고 partners 상세가 연결돼 있으면 그 partners.id, 아니면 null.
+  // 행 클릭 시: 사업+businessPartnerId → /business-partners/[businessPartnerId],
+  //            그 외 → /partners/[directory.id]
+  businessPartnerId: string | null;
+}
+
+// 디렉토리 생성/수정 입력 (서버에서 검증 후 사용)
+export interface DirectoryInput {
+  name?: string;
+  country?: string | null;
+  sector?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  website?: string | null;
+  last_contact_date?: string | null;
+  discovery_note?: string | null;
+  note?: string | null;
+}
+
 // KPI 매트릭스 한 셀 (기업 × KPI)
 export interface MatrixCell {
   progressId: string | null; // 아직 진척도 row 가 없으면 null

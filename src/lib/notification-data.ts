@@ -93,7 +93,7 @@ export async function getNotifications(): Promise<NotificationResult> {
     const partnerId = partner?.id ?? meeting?.partner_id ?? '';
     const partnerName = partner?.name ?? '알 수 없는 파트너';
     const meetingTitle = meeting?.title ?? '제목 없는 회의';
-    const href = partnerId ? `/kpi/${partnerId}?tab=meetings` : '/kpi';
+    const href = partnerId ? `/business-partners/${partnerId}?tab=meetings` : '/business-partners';
 
     if (due < today) {
       overdue.push({
@@ -143,7 +143,7 @@ export async function getNotifications(): Promise<NotificationResult> {
       body: `${p.name} (${p.country}) — 아직 KPI 가 정의되지 않았습니다. 설정 탭에서 KPI 를 등록해주세요.`,
       partnerId: p.id,
       partnerName: p.name,
-      href: `/kpi/${p.id}?tab=settings`,
+      href: `/business-partners/${p.id}?tab=settings`,
     });
   }
 

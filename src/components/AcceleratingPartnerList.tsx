@@ -27,7 +27,7 @@ function RateBar({ rate }: { rate: number }) {
 
 function PartnerCard({ p, lastMeetingDate }: { p: PartnerSummary; lastMeetingDate?: string }) {
   return (
-    <Link href={`/kpi/${p.id}`}>
+    <Link href={`/business-partners/${p.id}`}>
       <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer h-full flex flex-col">
         <div className="flex items-start justify-between mb-2">
           <div>

@@ -11,7 +11,7 @@ import type { PartnerMatrix } from '@/types/accelerating';
 export const dynamic = 'force-dynamic';
 
 // 파트너 전용 대시보드 — 자기 파트너사 정보 + KPI 현황만.
-// 관리자가 접근하면 전체 현황판(/kpi)으로 보낸다.
+// 관리자가 접근하면 전체 디렉토리(/)로 보낸다.
 export default async function PartnerHomePage() {
   const gate = await pageGate();
   if (gate.state === 'login') return <LoginNotice />;
@@ -19,8 +19,8 @@ export default async function PartnerHomePage() {
   if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
   const user = gate.user;
 
-  // 관리자는 파트너 대시보드 대상이 아님 → 관리자 현황판으로
-  if (user.role === 'admin') redirect('/kpi');
+  // 관리자는 파트너 대시보드 대상이 아님 → 전체 디렉토리로
+  if (user.role === 'admin') redirect('/');
 
   if (!user.partnerId) {
     return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 최고관리자에게 문의해주세요." />;

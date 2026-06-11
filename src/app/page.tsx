@@ -1,15 +1,15 @@
 import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
 import PendingNotice from '@/components/PendingNotice';
-import AcceleratingPartnerList from '@/components/AcceleratingPartnerList';
+import DirectoryList from '@/components/DirectoryList';
 import DbErrorNotice from '@/components/DbErrorNotice';
-import { getPartnerSummaries, KpiDataError } from '@/lib/kpi-data';
-import { getLatestMeetingDates } from '@/lib/meeting-data';
+import { getDirectoryList, DirectoryDataError } from '@/lib/directory-data';
 import { pageGate } from '@/lib/rbac';
 import Forbidden from '@/components/Forbidden';
 
 export const dynamic = 'force-dynamic';
 
+// 홈(/) — 전체 파트너사 디렉토리(사업/협력/잠재). 관리자 전용.
 export default async function Home() {
   // 가입 게이트: 미인증/미신청/승인대기 처리
   const gate = await pageGate();
@@ -18,72 +18,61 @@ export default async function Home() {
   if (gate.state === 'pending') return <PendingNotice email={gate.email} />;
   const user = gate.user;
 
-  // partner 는 파트너 목록 전체를 볼 수 없음 → 자기 대시보드로 이동
+  // 디렉토리는 관리자 전용 → 파트너는 자기 대시보드로
   if (user.role !== 'admin') {
-    if (user.partnerId) redirect(`/partner`);
-    // 파트너 매핑이 없는 비정상 상태 (DB 제약상 발생하지 않아야 함)
+    if (user.partnerId) redirect('/partner');
     return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 관리자에게 문의해주세요." />;
   }
 
-  let partners;
-  let lastMeetingDates = new Map<string, string>();
+  let items;
   try {
-    [partners, lastMeetingDates] = await Promise.all([
-      getPartnerSummaries(),
-      getLatestMeetingDates().catch(() => new Map<string, string>()),
-    ]);
+    items = await getDirectoryList();
   } catch (e) {
-    const message = e instanceof KpiDataError ? e.message : '데이터베이스 연결에 실패했습니다.';
+    const message = e instanceof DirectoryDataError ? e.message : '데이터베이스 연결에 실패했습니다.';
     return (
       <main className="max-w-7xl mx-auto px-6 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">파트너 네트워크</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">파트너사 목록</h1>
         <DbErrorNotice message={message} />
       </main>
     );
   }
 
-  const totalCompanies = partners.reduce((s, p) => s + p.companyCount, 0);
-  const submitted = partners.filter((p) => p.agreementSubmitted).length;
-  const submitRate = partners.length > 0 ? Math.round((submitted / partners.length) * 100) : 0;
-
-  // 전체 달성률: KPI 가 정의된 파트너들의 판정 단위 합산
-  const totalUnits = partners.reduce((s, p) => s + p.totalKpiUnits, 0);
-  const achievedUnits = partners.reduce((s, p) => s + p.achievedCount, 0);
-  const overallRate = totalUnits > 0 ? Math.round((achievedUnits / totalUnits) * 100) : 0;
+  const counts = {
+    total: items.length,
+    business: items.filter((i) => i.status === '사업').length,
+    cooperation: items.filter((i) => i.status === '협력').length,
+    potential: items.filter((i) => i.status === '잠재').length,
+  };
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">파트너 네트워크</h1>
+        <h1 className="text-2xl font-bold text-gray-900">파트너사 목록</h1>
         <p className="text-gray-500 text-sm mt-1">
-          해외 액셀러레이팅 프로그램 — 국가별 현지 파트너 {partners.length}곳
+          전체 파트너사 디렉토리 — 사업 · 협력 · 잠재 단계 통합 관리
         </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">전체 파트너</p>
-          <p className="text-2xl font-bold text-gray-900">{partners.length}</p>
+          <p className="text-xs text-gray-500 mb-1">전체 파트너사</p>
+          <p className="text-2xl font-bold text-gray-900">{counts.total}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">참여기업 총수</p>
-          <p className="text-2xl font-bold text-blue-600">{totalCompanies}</p>
+        <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+          <p className="text-xs text-blue-700 mb-1">사업 파트너</p>
+          <p className="text-2xl font-bold text-blue-700">{counts.business}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">협약 제출 비율</p>
-          <p className="text-2xl font-bold text-purple-600">{submitRate}%</p>
-          <p className="text-xs text-gray-400 mt-0.5">{submitted}/{partners.length}곳</p>
+        <div className="bg-green-50 rounded-xl border border-green-200 p-4">
+          <p className="text-xs text-green-700 mb-1">협력 파트너</p>
+          <p className="text-2xl font-bold text-green-700">{counts.cooperation}</p>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">전체 KPI 달성률</p>
-          <p className="text-2xl font-bold text-green-600">{overallRate}%</p>
+        <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+          <p className="text-xs text-amber-700 mb-1">잠재 파트너</p>
+          <p className="text-2xl font-bold text-amber-700">{counts.potential}</p>
         </div>
       </div>
 
-      <AcceleratingPartnerList
-        partners={partners}
-        lastMeetingDates={Object.fromEntries(lastMeetingDates)}
-      />
+      <DirectoryList items={items} />
     </main>
   );
 }

@@ -124,7 +124,7 @@ export default function MeetingImportForm({ partners }: { partners: PartnerOptio
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? '저장에 실패했습니다.');
-      router.push(`/kpi/${selectedPartnerId}?tab=meetings`);
+      router.push(`/business-partners/${selectedPartnerId}?tab=meetings`);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다.');

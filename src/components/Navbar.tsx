@@ -26,8 +26,8 @@ export default async function Navbar() {
       <div className="flex items-center gap-6 text-sm text-gray-600">
         {isAdmin && (
           <>
-            <Link href="/" className="hover:text-blue-600 transition-colors">파트너 목록</Link>
-            <Link href="/kpi" className="hover:text-blue-600 transition-colors">KPI 관리</Link>
+            <Link href="/" className="hover:text-blue-600 transition-colors">파트너사 목록</Link>
+            <Link href="/business-partners" className="hover:text-blue-600 transition-colors">사업파트너 관리</Link>
             <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 가져오기</Link>
             {isSuperAdmin && (
               <Link href="/admin/users" className="hover:text-blue-600 transition-colors">사용자 관리</Link>
