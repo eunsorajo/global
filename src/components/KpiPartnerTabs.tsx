@@ -5,34 +5,45 @@ import { useSearchParams } from 'next/navigation';
 import KpiMatrix from '@/components/KpiMatrix';
 import KpiSettings from '@/components/KpiSettings';
 import MeetingsTab from '@/components/MeetingsTab';
-import type { PartnerMatrix } from '@/types/accelerating';
+import PartnerInfoTab from '@/components/PartnerInfoTab';
+import type { PartnerMatrix, DirectoryListItem } from '@/types/accelerating';
 import type { MeetingWithFollowups } from '@/types/meeting';
 
-type Tab = 'matrix' | 'settings' | 'meetings';
+type Tab = 'info' | 'matrix' | 'settings' | 'meetings';
 
 export default function KpiPartnerTabs({
   matrix,
   meetings,
+  directory,
   isAdmin,
 }: {
   matrix: PartnerMatrix;
   meetings: MeetingWithFollowups[];
+  // partners.directory_id 로 연결된 디렉토리 프로필. 미전달(파트너 본인 대시보드 등)이면 정보 탭 비노출.
+  directory?: DirectoryListItem | null;
   // 관리자 여부 — 회의록 탭/협약 토글 등 관리자 전용 UI 노출 제어 (서버 측 집행과 별개의 UX)
   isAdmin: boolean;
 }) {
   const { partner, companies, kpiDefinitions } = matrix;
   const canShowMatrix = companies.length > 0 && kpiDefinitions.length > 0;
+  // '파트너사 정보' 탭은 directory prop 이 전달된 사업 파트너 상세에서만 노출.
+  const showInfoTab = directory !== undefined;
 
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
+  // 정보 탭이 있으면 기본 탭은 '파트너사 정보'. ?tab= 으로 명시 시 해당 탭으로.
   const initialTab: Tab =
-    tabParam === 'meetings' && isAdmin
-      ? 'meetings'
+    tabParam === 'matrix'
+      ? 'matrix'
       : tabParam === 'settings'
         ? 'settings'
-        : canShowMatrix
-          ? 'matrix'
-          : 'settings';
+        : tabParam === 'meetings' && isAdmin
+          ? 'meetings'
+          : showInfoTab
+            ? 'info'
+            : canShowMatrix
+              ? 'matrix'
+              : 'settings';
   const [tab, setTab] = useState<Tab>(initialTab);
 
   const tabBtn = (active: boolean) =>
@@ -43,6 +54,11 @@ export default function KpiPartnerTabs({
   return (
     <div>
       <div className="flex gap-2 border-b border-gray-200 mb-6">
+        {showInfoTab && (
+          <button className={tabBtn(tab === 'info')} onClick={() => setTab('info')}>
+            파트너사 정보
+          </button>
+        )}
         <button className={tabBtn(tab === 'matrix')} onClick={() => setTab('matrix')}>
           KPI 매트릭스
         </button>
@@ -55,6 +71,10 @@ export default function KpiPartnerTabs({
           </button>
         )}
       </div>
+
+      {tab === 'info' && showInfoTab && (
+        <PartnerInfoTab directory={directory ?? null} meetings={meetings} isAdmin={isAdmin} />
+      )}
 
       {tab === 'matrix' && (
         canShowMatrix ? (

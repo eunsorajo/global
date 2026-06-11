@@ -7,8 +7,11 @@ import DbErrorNotice from '@/components/DbErrorNotice';
 import KpiPartnerTabs from '@/components/KpiPartnerTabs';
 import { getPartnerMatrix, KpiDataError } from '@/lib/kpi-data';
 import { getMeetingsByPartner } from '@/lib/meeting-data';
+import { getDirectoryItem } from '@/lib/directory-data';
+import { getSupabaseAdmin } from '@/lib/supabase';
 import { pageGate } from '@/lib/rbac';
 import type { MeetingWithFollowups } from '@/types/meeting';
+import type { DirectoryListItem } from '@/types/accelerating';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +70,21 @@ export default async function BusinessPartnerDetailPage({ params }: Props) {
 
   const { partner } = matrix;
 
+  // 파트너사 정보 탭용 디렉토리 프로필 — partners.directory_id 로 연결된 항목 조회.
+  // (PartnerRow 타입에는 directory_id 가 없어 직접 조회한다.)
+  let directory: DirectoryListItem | null = null;
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from('partners')
+      .select('directory_id')
+      .eq('id', partnerId)
+      .maybeSingle();
+    const directoryId = (data as { directory_id: string | null } | null)?.directory_id ?? null;
+    if (directoryId) directory = await getDirectoryItem(directoryId);
+  } catch {
+    directory = null;
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-6 py-8">
       {isAdmin && (
@@ -97,7 +115,7 @@ export default async function BusinessPartnerDetailPage({ params }: Props) {
         </div>
       </div>
 
-      <KpiPartnerTabs matrix={matrix} meetings={meetings} isAdmin={isAdmin} />
+      <KpiPartnerTabs matrix={matrix} meetings={meetings} directory={directory} isAdmin={isAdmin} />
     </main>
   );
 }
