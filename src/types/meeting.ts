@@ -52,11 +52,27 @@ export interface ParsedFollowup {
   dueDate?: string | null;
 }
 
+// 파트너명 유사 후보 (확정 매칭이 아닌 제안 — UI 에서 클릭으로 확정)
+export interface PartnerMatchSuggestion {
+  id: string;
+  name: string;
+  kind: 'business' | 'directory'; // business=사업 파트너, directory=협력/잠재
+  status?: string | null;
+  country?: string | null;
+  score: number; // 0~1
+}
+
 export interface ParsedMeeting {
   // 원문에서 추출한 파트너명(매칭 전). 비어있을 수 있음.
   partnerName: string | null;
-  // DB partners 와 매칭된 결과 (서버 파싱 시 자동 매칭 시도)
+  // DB partners(사업 파트너)와 확정 매칭된 결과 (법인격·공백 정규화 동일)
   matchedPartnerId: string | null;
+  // partner_directory(협력/잠재)와 확정 매칭된 결과 — 사업 매칭이 없을 때만 채워짐
+  matchedDirectoryId?: string | null;
+  matchedDirectoryName?: string | null;
+  matchedDirectoryStatus?: string | null;
+  // 확정 매칭이 없을 때의 유사 후보 목록
+  matchSuggestions?: PartnerMatchSuggestion[];
   meetingDate: string | null; // YYYY-MM-DD
   title: string;
   attendees: string | null;

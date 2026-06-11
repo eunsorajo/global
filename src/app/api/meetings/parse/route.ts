@@ -3,6 +3,48 @@ import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { parseMeetingText, MAX_TEXT_BYTES } from '@/lib/meeting-parser';
 import { parseUploadedWorkbook, MAX_XLSX_BYTES } from '@/lib/meeting-excel';
 import { getPartnerOptions, MeetingDataError } from '@/lib/meeting-data';
+import { getDirectoryMatchCandidates, DirectoryDataError } from '@/lib/directory-data';
+import { matchCompanyName, type MatchCandidate } from '@/lib/company-match';
+import type { ParsedMeeting } from '@/types/meeting';
+
+// 파싱 결과에 회사명 매칭을 보강한다.
+//   - 사업 파트너(partners) + 협력/잠재(partner_directory) 전체를 대상으로,
+//     법인격("주식회사", "(주)", "Co., Ltd." 등)·공백·대소문자를 제거한 키로 확정 매칭.
+//   - 확정 매칭이 없으면 오타/부분표기 수준의 유사 후보를 제안(자동 연결 안 함).
+function enrichPartnerMatch(parsed: ParsedMeeting, candidates: MatchCandidate[]): ParsedMeeting {
+  if (!parsed.partnerName) return parsed;
+
+  // 단순 매칭(기존 파서)이 이미 사업 파트너를 찾았으면 그대로 둔다.
+  if (parsed.matchedPartnerId) return parsed;
+
+  const { exact, suggestions } = matchCompanyName(parsed.partnerName, candidates);
+
+  // 기존의 "찾지 못했습니다" 경고는 매칭 결과에 맞게 교체한다.
+  const warnings = parsed.warnings.filter((w) => !w.includes('파트너를 DB에서 찾지 못했습니다'));
+
+  if (exact?.kind === 'business') {
+    return { ...parsed, matchedPartnerId: exact.id, warnings };
+  }
+  if (exact?.kind === 'directory') {
+    return {
+      ...parsed,
+      matchedDirectoryId: exact.id,
+      matchedDirectoryName: exact.name,
+      matchedDirectoryStatus: exact.status ?? null,
+      warnings,
+    };
+  }
+  if (suggestions.length > 0) {
+    warnings.push(
+      `"${parsed.partnerName}"와(과) 비슷한 이름의 파트너가 있습니다. 아래 후보에서 확인해 주세요.`,
+    );
+    return { ...parsed, matchSuggestions: suggestions, warnings };
+  }
+  warnings.push(
+    `"${parsed.partnerName}"는 등록되지 않은 회사입니다. 신규 잠재 파트너로 등록하거나 직접 선택해 주세요.`,
+  );
+  return { ...parsed, warnings };
+}
 
 const XLSX_MIME = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -21,11 +63,31 @@ export async function POST(req: NextRequest) {
   }
 
   let partners: { id: string; name: string }[];
+  let candidates: MatchCandidate[];
   try {
-    partners = await getPartnerOptions();
+    const [partnerList, dirList] = await Promise.all([
+      getPartnerOptions(),
+      getDirectoryMatchCandidates(),
+    ]);
+    partners = partnerList;
+    candidates = [
+      ...partnerList.map<MatchCandidate>((p) => ({ id: p.id, name: p.name, kind: 'business' })),
+      ...dirList.map<MatchCandidate>((d) => ({
+        id: d.id,
+        name: d.name,
+        kind: 'directory',
+        status: d.status,
+        country: d.country,
+      })),
+    ];
   } catch (e) {
-    const message = e instanceof MeetingDataError ? e.message : '파트너 목록을 불러오지 못했습니다.';
-    if (!(e instanceof MeetingDataError)) console.error('[POST /api/meetings/parse] partners', e);
+    const message =
+      e instanceof MeetingDataError || e instanceof DirectoryDataError
+        ? e.message
+        : '파트너 목록을 불러오지 못했습니다.';
+    if (!(e instanceof MeetingDataError || e instanceof DirectoryDataError)) {
+      console.error('[POST /api/meetings/parse] partners', e);
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
@@ -56,7 +118,7 @@ export async function POST(req: NextRequest) {
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
       const parsed = await parseUploadedWorkbook(buffer, partners);
-      return NextResponse.json({ parsed });
+      return NextResponse.json({ parsed: enrichPartnerMatch(parsed, candidates) });
     } catch (e) {
       console.error('[POST /api/meetings/parse] xlsx', e);
       return NextResponse.json({ error: '엑셀 파일을 분석하지 못했습니다. 양식을 확인해주세요.' }, { status: 400 });
@@ -79,5 +141,5 @@ export async function POST(req: NextRequest) {
   }
 
   const parsed = parseMeetingText(text, { partners, keepRaw: true });
-  return NextResponse.json({ parsed });
+  return NextResponse.json({ parsed: enrichPartnerMatch(parsed, candidates) });
 }

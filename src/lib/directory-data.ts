@@ -369,3 +369,105 @@ export async function deleteFollowup(id: string): Promise<void> {
   const { error } = await supabase.from('followups').delete().eq('id', id);
   if (error) throw new DirectoryDataError(describeSupabaseError(error));
 }
+
+// ---------- 회의록 → 디렉토리(협력/잠재) 기록 ----------
+
+// 회사명 매칭 후보용 협력/잠재 목록 (사업은 partners 목록이 담당).
+export async function getDirectoryMatchCandidates(): Promise<
+  { id: string; name: string; status: string; country: string | null }[]
+> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('partner_directory')
+    .select('id, name, status, country')
+    .in('status', ['잠재', '협력']);
+  if (error) throw new DirectoryDataError(describeSupabaseError(error));
+  return (data ?? []) as { id: string; name: string; status: string; country: string | null }[];
+}
+
+export interface DirectoryMeetingNoteInput {
+  meetingDate: string | null; // YYYY-MM-DD
+  title: string;
+  attendees: string | null;
+  summary: string | null;
+  keyPoints: string[];
+  decisions: string[];
+  followups: { content: string; assignee?: string | null; dueDate?: string | null }[];
+}
+
+// 회의록 내용을 디렉토리(협력/잠재) 파트너 기록에 반영한다.
+// meetings 테이블은 사업 파트너 전용이므로, 협력/잠재는 CRM 필드로 보존:
+//   - note: 회의 기록 블록을 맨 위에 추가 (기존 메모 보존)
+//   - future_plan(향후 협업계획): 결정사항을 날짜 표기와 함께 맨 위에 추가
+//   - last_contact_date: 회의일이 더 최신이면 갱신
+//   - followups: directory_id 팔로업으로 일괄 등록
+export async function saveMeetingNoteToDirectory(
+  directoryId: string,
+  input: DirectoryMeetingNoteInput,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  const dirRes = await supabase
+    .from('partner_directory')
+    .select('id, note, future_plan, last_contact_date')
+    .eq('id', directoryId)
+    .maybeSingle();
+  if (dirRes.error) throw new DirectoryDataError(describeSupabaseError(dirRes.error));
+  if (!dirRes.data) throw new DirectoryDataError('해당 파트너사를 찾을 수 없습니다.');
+  const cur = dirRes.data as {
+    note: string | null;
+    future_plan: string | null;
+    last_contact_date: string | null;
+  };
+
+  const dateLabel = input.meetingDate ?? '날짜 미상';
+
+  // 회의 기록 블록 (note 맨 위에 누적)
+  const lines: string[] = [`── 회의록 (${dateLabel} · ${input.title}) ──`];
+  if (input.attendees) lines.push(`참석자: ${input.attendees}`);
+  if (input.summary) lines.push(input.summary);
+  if (input.keyPoints.length > 0) {
+    lines.push('핵심사항:');
+    for (const k of input.keyPoints) lines.push(`- ${k}`);
+  }
+  if (input.decisions.length > 0) {
+    lines.push('결정사항:');
+    for (const d of input.decisions) lines.push(`- ${d}`);
+  }
+  const noteBlock = lines.join('\n');
+
+  const payload: Record<string, unknown> = {
+    note: cur.note ? `${noteBlock}\n\n${cur.note}` : noteBlock,
+    updated_at: new Date().toISOString(),
+  };
+
+  // 예정(향후 협업계획) 업데이트: 결정사항이 있으면 날짜와 함께 맨 위에 추가
+  if (input.decisions.length > 0) {
+    const planBlock = `[${dateLabel}] ${input.decisions.join(' / ')}`;
+    payload.future_plan = cur.future_plan ? `${planBlock}\n${cur.future_plan}` : planBlock;
+  }
+
+  // 최근 접촉일: 회의일이 더 최신일 때만 갱신
+  if (input.meetingDate && (!cur.last_contact_date || input.meetingDate > cur.last_contact_date)) {
+    payload.last_contact_date = input.meetingDate;
+  }
+
+  const upRes = await supabase.from('partner_directory').update(payload).eq('id', directoryId);
+  if (upRes.error) throw new DirectoryDataError(describeSupabaseError(upRes.error));
+
+  // 팔로업 일괄 등록
+  const fuRows = input.followups
+    .filter((f) => f.content && f.content.trim())
+    .map((f) => ({
+      directory_id: directoryId,
+      meeting_id: null,
+      content: f.content.trim(),
+      assignee: f.assignee?.trim() || null,
+      due_date: f.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(f.dueDate) ? f.dueDate : null,
+      status: 'pending' as const,
+    }));
+  if (fuRows.length > 0) {
+    const fuRes = await supabase.from('followups').insert(fuRows);
+    if (fuRes.error) throw new DirectoryDataError(describeSupabaseError(fuRes.error));
+  }
+}
