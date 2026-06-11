@@ -106,42 +106,40 @@ export default function DirectoryList({ items }: { items: DirectoryListItem[] })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="space-y-2">
-          <div className="flex gap-2 flex-wrap items-center">
-            <span className="text-xs text-gray-400 w-14">상태</span>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        {/* 필터 카드: 상태 / 국가 / 분야 행 사이에 가로 구분선 */}
+        <div className="min-w-0 flex-1 bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+          <FilterRow label="상태">
             {STATUS_FILTERS.map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)} className={pill(statusFilter === s)}>
                 {s}
               </button>
             ))}
-          </div>
+          </FilterRow>
           {countries.length > 0 && (
-            <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-gray-400 w-14">국가</span>
+            <FilterRow label="국가">
               <button onClick={() => setCountry(null)} className={pill(country === null)}>전체</button>
               {countries.map((c) => (
                 <button key={c} onClick={() => setCountry(country === c ? null : c)} className={pill(country === c)}>
                   {c}
                 </button>
               ))}
-            </div>
+            </FilterRow>
           )}
           {sectors.length > 0 && (
-            <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-gray-400 w-14">분야</span>
+            <FilterRow label="분야">
               <button onClick={() => setSector(null)} className={pill(sector === null)}>전체</button>
               {sectors.map((s) => (
                 <button key={s} onClick={() => setSector(sector === s ? null : s)} className={pill(sector === s)}>
                   {s}
                 </button>
               ))}
-            </div>
+            </FilterRow>
           )}
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
         >
           {showForm ? '닫기' : '+ 파트너사 추가'}
         </button>
@@ -204,18 +202,24 @@ export default function DirectoryList({ items }: { items: DirectoryListItem[] })
         </form>
       )}
 
+      {/* 결과 카운트 */}
+      <p className="text-xs text-gray-400 mb-2">
+        총 {filtered.length}곳
+        {filtered.length !== items.length && <span> (전체 {items.length}곳 중)</span>}
+      </p>
+
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400 text-sm">해당 조건의 파트너사가 없습니다.</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm break-keep">
             <thead className="bg-gray-50 text-gray-500 text-xs">
-              <tr>
+              <tr className="border-b border-gray-200">
                 <th className="text-left px-4 py-3 font-medium">파트너사 / 국가</th>
                 <th className="text-center px-4 py-3 font-medium">상태</th>
                 <th className="text-left px-4 py-3 font-medium">분야</th>
-                <th className="text-left px-4 py-3 font-medium">최근 접촉일</th>
-                <th className="text-left px-4 py-3 font-medium">발굴 경위</th>
+                <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">최근 접촉일</th>
+                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">발굴 경위</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -230,13 +234,13 @@ export default function DirectoryList({ items }: { items: DirectoryListItem[] })
                     <span className="font-medium text-gray-900">{i.name}</span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full border ${statusBadge[i.status]}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${statusBadge[i.status]}`}>
                       {i.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{i.sector ?? '-'}</td>
-                  <td className="px-4 py-3 text-gray-500">{i.last_contact_date ?? '-'}</td>
-                  <td className="px-4 py-3 text-gray-500 max-w-xs truncate">
+                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{i.last_contact_date ?? '-'}</td>
+                  <td className="px-4 py-3 text-gray-500 max-w-xs truncate hidden md:table-cell">
                     {i.status === '잠재' ? (i.discovery_note ?? '-') : '-'}
                   </td>
                 </tr>
@@ -245,6 +249,16 @@ export default function DirectoryList({ items }: { items: DirectoryListItem[] })
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// 필터 한 행 — 라벨 + 칩 목록. 행 사이 구분선은 부모의 divide-y 가 그린다.
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2 flex-wrap items-center px-4 py-2.5">
+      <span className="text-xs text-gray-400 w-10 shrink-0">{label}</span>
+      {children}
     </div>
   );
 }
