@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 
 // 액셀러레이팅 파트너 수정 — 협약서 제출 여부 토글 등
 // (기존 CRM /partners 와 별개 도메인이라 경로를 분리)
+// 권한: admin 전용 (협약 제출 확정은 관리자 검토 항목).
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });

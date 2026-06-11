@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { buildKpiExportWorkbook, exportFileName, KpiExportError } from '@/lib/kpi-export';
 
 export const dynamic = 'force-dynamic';
 
 // GET: 현재 KPI/회의록 현황을 .xlsx 로 내보낸다.
+// 권한: admin 전용 (전체 파트너 데이터 내보내기).
 export async function GET() {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   try {
     const buffer = await buildKpiExportWorkbook();

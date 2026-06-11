@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { parseMeetingText, MAX_TEXT_BYTES } from '@/lib/meeting-parser';
 import { parseUploadedWorkbook, MAX_XLSX_BYTES } from '@/lib/meeting-excel';
 import { getPartnerOptions, MeetingDataError } from '@/lib/meeting-data';
@@ -14,8 +14,11 @@ const XLSX_MIME = new Set([
 // - JSON 바디 { text } : 붙여넣기 파싱
 // - multipart/form-data (file) : 엑셀 파싱
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   let partners: { id: string; name: string }[];
   try {

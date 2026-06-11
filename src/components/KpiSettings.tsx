@@ -8,9 +8,11 @@ interface Props {
   partner: PartnerRow;
   initialDefinitions: KpiDefinitionRow[];
   initialCompanies: CompanyRow[];
+  // 관리자 여부. partner 는 협약 토글 비노출 + 협약 제출 후 KPI 정의 편집 잠금(서버도 집행).
+  isAdmin: boolean;
 }
 
-export default function KpiSettings({ partner, initialDefinitions, initialCompanies }: Props) {
+export default function KpiSettings({ partner, initialDefinitions, initialCompanies, isAdmin }: Props) {
   const router = useRouter();
   const [defs, setDefs] = useState<KpiDefinitionRow[]>(initialDefinitions);
   const [companies, setCompanies] = useState<CompanyRow[]>(initialCompanies);
@@ -162,39 +164,59 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
 
   const input = 'border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400';
 
+  // partner 는 협약 제출 후 KPI 정의를 편집할 수 없다 (서버에서도 거부). 잠금 여부.
+  const kpiLocked = !isAdmin && agreement;
+
   return (
     <div className="space-y-8">
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>
       )}
 
-      {/* 협약서 토글 */}
+      {/* 협약서 토글 — 관리자 전용 (partner 에게는 상태만 표시) */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">협약서 제출 여부</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              미제출 상태에서도 KPI 항목을 미리 정의할 수 있습니다.
+              {isAdmin
+                ? '미제출 상태에서도 KPI 항목을 미리 정의할 수 있습니다.'
+                : '협약 제출 여부는 관리자가 확정합니다.'}
             </p>
           </div>
-          <button
-            onClick={toggleAgreement}
-            className={`text-sm px-3 py-1.5 rounded-lg border ${
-              agreement
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : 'bg-red-50 text-red-600 border-red-200'
-            }`}
-          >
-            {agreement ? '제출 완료' : '미제출'} (클릭하여 전환)
-          </button>
+          {isAdmin ? (
+            <button
+              onClick={toggleAgreement}
+              className={`text-sm px-3 py-1.5 rounded-lg border ${
+                agreement
+                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                  : 'bg-red-50 text-red-600 border-red-200'
+              }`}
+            >
+              {agreement ? '제출 완료' : '미제출'} (클릭하여 전환)
+            </button>
+          ) : (
+            <span
+              className={`text-sm px-3 py-1.5 rounded-lg border ${
+                agreement ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-600 border-red-200'
+              }`}
+            >
+              {agreement ? '제출 완료' : '미제출'}
+            </span>
+          )}
         </div>
+        {kpiLocked && (
+          <p className="text-xs text-gray-500 mt-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            협약이 제출되어 KPI 항목은 잠금 상태입니다. 수정이 필요하면 관리자에게 문의해주세요.
+          </p>
+        )}
       </section>
 
       {/* KPI 정의 관리 */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-900">KPI 항목 관리</h3>
-          {defs.length === 0 && (
+          {!kpiLocked && defs.length === 0 && (
             <button
               onClick={applyTemplate}
               disabled={busy}
@@ -228,8 +250,9 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
                   <td className="py-2">
                     <select
                       defaultValue={k.category ?? ''}
+                      disabled={kpiLocked}
                       onChange={(e) => updateKpi(k.id, { category: (e.target.value || null) as KpiCategory | null })}
-                      className={input}
+                      className={`${input} disabled:bg-gray-50 disabled:text-gray-400`}
                     >
                       <option value="">미정</option>
                       <option value="공통">공통</option>
@@ -239,28 +262,33 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
                   <td className="py-2">
                     <input
                       defaultValue={k.name}
+                      disabled={kpiLocked}
                       onBlur={(e) => e.target.value.trim() && e.target.value !== k.name && updateKpi(k.id, { name: e.target.value })}
-                      className={`${input} w-full`}
+                      className={`${input} w-full disabled:bg-gray-50 disabled:text-gray-400`}
                     />
                   </td>
                   <td className="py-2">
                     <input
                       defaultValue={k.target ?? ''}
+                      disabled={kpiLocked}
                       onBlur={(e) => e.target.value !== (k.target ?? '') && updateKpi(k.id, { target: e.target.value || null })}
-                      className={`${input} w-full`}
+                      className={`${input} w-full disabled:bg-gray-50 disabled:text-gray-400`}
                     />
                   </td>
                   <td className="py-2">
                     <input
                       defaultValue={k.note ?? ''}
+                      disabled={kpiLocked}
                       onBlur={(e) => e.target.value !== (k.note ?? '') && updateKpi(k.id, { note: e.target.value || null })}
-                      className={`${input} w-full`}
+                      className={`${input} w-full disabled:bg-gray-50 disabled:text-gray-400`}
                     />
                   </td>
                   <td className="py-2 text-right">
-                    <button onClick={() => deleteKpi(k.id)} className="text-xs text-red-500 hover:text-red-700">
-                      삭제
-                    </button>
+                    {!kpiLocked && (
+                      <button onClick={() => deleteKpi(k.id)} className="text-xs text-red-500 hover:text-red-700">
+                        삭제
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -268,7 +296,8 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
           </table>
         )}
 
-        {/* 새 KPI 추가 */}
+        {/* 새 KPI 추가 (협약 제출 후 partner 는 비노출) */}
+        {!kpiLocked && (
         <div className="flex flex-wrap gap-2 items-end border-t border-gray-100 pt-4">
           <div>
             <label className="block text-xs text-gray-400 mb-0.5">구분</label>
@@ -297,6 +326,7 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
             + 추가
           </button>
         </div>
+        )}
       </section>
 
       {/* 참여기업 관리 */}

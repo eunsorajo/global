@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { requireUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
+import { getCompanyPartnerId } from '@/lib/kpi-data';
 
 // 참여기업 수정
+// 권한: admin, 또는 partner 가 자기 파트너 소속 기업일 때만.
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  let session;
+  try {
+    session = await requireUser();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
@@ -19,6 +25,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   if ('name' in body && (!body.name || !body.name.trim())) {
     return NextResponse.json({ error: '기업명(name)은 비울 수 없습니다.' }, { status: 400 });
+  }
+
+  // 권한: 기업의 실제 partner_id 확인 → 접근 검증.
+  try {
+    const partnerId = await getCompanyPartnerId(id);
+    if (!partnerId) return NextResponse.json({ error: '해당 기업을 찾을 수 없습니다.' }, { status: 404 });
+    assertPartnerAccess(session, partnerId);
+  } catch (e) {
+    return errorResponse(e);
   }
 
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -39,12 +54,25 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 }
 
 // 참여기업 삭제 (진척도 셀은 cascade)
+// 권한: admin, 또는 partner 가 자기 파트너 소속 기업일 때만.
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  let session;
+  try {
+    session = await requireUser();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
+
+  try {
+    const partnerId = await getCompanyPartnerId(id);
+    if (!partnerId) return NextResponse.json({ error: '해당 기업을 찾을 수 없습니다.' }, { status: 404 });
+    assertPartnerAccess(session, partnerId);
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from('companies').delete().eq('id', id);

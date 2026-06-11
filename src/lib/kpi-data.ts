@@ -107,6 +107,46 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
   });
 }
 
+// ---------- RBAC: 리소스 → 소속 파트너 조회 (서버 측 권한 검증용) ----------
+// 클라이언트가 보낸 partnerId 를 신뢰하지 않고, 대상 리소스의 실제 partner_id 를 DB 에서 확인한다.
+
+// company_id → partner_id (없으면 null)
+export async function getCompanyPartnerId(companyId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('companies')
+    .select('partner_id')
+    .eq('id', companyId)
+    .maybeSingle();
+  if (error) throw new KpiDataError(describeSupabaseError(error));
+  return (data as { partner_id: string } | null)?.partner_id ?? null;
+}
+
+// kpi_definition_id → partner_id (없으면 null)
+export async function getKpiDefinitionPartnerId(definitionId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('kpi_definitions')
+    .select('partner_id')
+    .eq('id', definitionId)
+    .maybeSingle();
+  if (error) throw new KpiDataError(describeSupabaseError(error));
+  return (data as { partner_id: string } | null)?.partner_id ?? null;
+}
+
+// partner 가 존재하는지 + 협약서 제출 여부 (partner 의 KPI 정의 입력 가능 시점 판단용)
+export async function getPartnerAgreement(partnerId: string): Promise<{ exists: boolean; submitted: boolean }> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('partners')
+    .select('agreement_submitted')
+    .eq('id', partnerId)
+    .maybeSingle();
+  if (error) throw new KpiDataError(describeSupabaseError(error));
+  if (!data) return { exists: false, submitted: false };
+  return { exists: true, submitted: (data as { agreement_submitted: boolean }).agreement_submitted };
+}
+
 // 단일 파트너 매트릭스 (KPI 상세 화면)
 export async function getPartnerMatrix(partnerId: string): Promise<PartnerMatrix | null> {
   const supabase = getSupabaseAdmin();

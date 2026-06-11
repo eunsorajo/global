@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { getMeetingsByPartner, saveParsedMeeting, MeetingDataError } from '@/lib/meeting-data';
 import type { ParsedFollowup } from '@/types/meeting';
 
 // GET: 파트너별 회의록 목록 (?partnerId=)
+// 권한: admin 전용 (회의록은 내부 운영 메뉴).
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const partnerId = req.nextUrl.searchParams.get('partnerId');
   if (!partnerId) {
@@ -36,9 +40,13 @@ interface SaveBody {
 }
 
 // POST: 파싱·확정된 회의록 저장
+// 권한: admin 전용.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   let body: SaveBody;
   try {

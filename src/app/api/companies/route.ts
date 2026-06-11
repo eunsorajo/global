@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { requireUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
 
 // 참여기업 추가
+// 권한: admin, 또는 partner 가 자기 파트너에 추가할 때만.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  let session;
+  try {
+    session = await requireUser();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   let body: {
     partnerId?: string;
@@ -21,6 +26,13 @@ export async function POST(req: NextRequest) {
 
   if (!body.partnerId || !body.name || !body.name.trim()) {
     return NextResponse.json({ error: 'partnerId 와 기업명(name)은 필수입니다.' }, { status: 400 });
+  }
+
+  // 권한: 대상 파트너 접근 검증
+  try {
+    assertPartnerAccess(session, body.partnerId);
+  } catch (e) {
+    return errorResponse(e);
   }
 
   const supabase = getSupabaseAdmin();

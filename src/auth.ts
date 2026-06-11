@@ -1,8 +1,7 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import type { JWT } from 'next-auth/jwt';
-
-const ALLOWED_EMAILS = ['joeunsora@gmail.com'];
+import { getUserByEmail } from '@/lib/user-data';
 
 // Google OAuth refresh_token 으로 access_token 을 갱신한다.
 // (캘린더 API 가 사용자 토큰을 사용하므로 만료 시 자동 갱신 필요)
@@ -63,15 +62,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    // 로그인 허용 여부: users 테이블(이메일 소문자 비교)에 등록된 계정만 허용.
+    // 미등록(또는 조회 실패) 시 로그인 거부 → 데이터에 일절 접근 못 함.
     async signIn({ user }) {
-      return ALLOWED_EMAILS.includes(user.email ?? '');
+      try {
+        const row = await getUserByEmail(user.email);
+        return row != null;
+      } catch (e) {
+        console.error('[auth] signIn user lookup failed:', e instanceof Error ? e.message : e);
+        return false; // 조회 실패 시 안전하게 거부
+      }
     },
-    async jwt({ token, account }) {
-      // 최초 로그인: 토큰 정보 저장
+    async jwt({ token, account, user }) {
+      // 최초 로그인: 토큰 정보 + RBAC(역할/파트너) 적재
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
+
+        // signIn 을 통과했으므로 users row 가 존재한다. role/partner_id 를 토큰에 실는다.
+        const email = user?.email ?? token.email ?? null;
+        try {
+          const row = await getUserByEmail(email);
+          if (row) {
+            token.role = row.role;
+            token.partnerId = row.partner_id;
+            token.email = row.email;
+          }
+        } catch (e) {
+          console.error('[auth] jwt role load failed:', e instanceof Error ? e.message : e);
+        }
         return token;
       }
 
@@ -87,6 +107,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       session.accessToken = token.accessToken as string | undefined;
       session.error = token.error as string | undefined;
+      // RBAC: 세션 user 에 역할/파트너/이메일 노출
+      if (session.user) {
+        session.user.role = token.role;
+        session.user.partnerId = token.partnerId ?? null;
+        session.user.email = (token.email as string | undefined) ?? session.user.email;
+      }
       return session;
     },
   },

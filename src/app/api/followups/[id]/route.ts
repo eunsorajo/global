@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 import type { FollowupStatus } from '@/types/meeting';
 
 const VALID_STATUS: FollowupStatus[] = ['pending', 'in_progress', 'completed'];
 
 // PATCH: 팔로업 상태 변경
+// 권한: admin 전용 (회의록/팔로업은 내부 운영 메뉴).
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });

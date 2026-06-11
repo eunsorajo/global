@@ -1,15 +1,22 @@
-import { auth } from '@/auth';
+import { redirect } from 'next/navigation';
 import LoginNotice from '@/components/LoginNotice';
+import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import MeetingImportForm from '@/components/MeetingImportForm';
 import { getPartnerOptions, MeetingDataError } from '@/lib/meeting-data';
+import { getSessionUser } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ImportMeetingPage() {
   // 인증 이후에만 데이터 조회
-  const session = await auth();
-  if (!session) return <LoginNotice />;
+  const user = await getSessionUser();
+  if (!user) return <LoginNotice />;
+  // 회의록 가져오기는 관리자 전용. partner 차단.
+  if (user.role !== 'admin') {
+    if (user.partnerId) redirect(`/kpi/${user.partnerId}`);
+    return <Forbidden message="계정에 파트너가 매핑되어 있지 않습니다. 관리자에게 문의해주세요." />;
+  }
 
   let partners;
   try {

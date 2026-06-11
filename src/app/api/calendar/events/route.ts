@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { fetchUpcomingMeetings } from '@/lib/google-calendar';
 
+// 권한: admin 전용 (회의 일정은 내부 운영 메뉴).
 export async function GET(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
+
   const session = await auth();
   if (!session?.accessToken) {
     return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });

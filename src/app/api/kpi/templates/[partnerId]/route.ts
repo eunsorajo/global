@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { requireUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
+import { getPartnerAgreement } from '@/lib/kpi-data';
 
 // 공통 KPI 4종 템플릿 1클릭 채우기.
 // 협약서 미제출(KPI 미정의) 파트너 온보딩용.
@@ -12,11 +13,29 @@ const COMMON_KPI_TEMPLATE = [
 ] as const;
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ partnerId: string }> }) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  let session;
+  try {
+    session = await requireUser();
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const { partnerId } = await ctx.params;
   if (!partnerId) return NextResponse.json({ error: 'partnerId 가 필요합니다.' }, { status: 400 });
+
+  // 권한: 대상 파트너 접근 + (partner 면) 협약 미제출 상태일 때만.
+  try {
+    assertPartnerAccess(session, partnerId);
+    if (session.role !== 'admin') {
+      const { exists, submitted } = await getPartnerAgreement(partnerId);
+      if (!exists) return NextResponse.json({ error: '해당 파트너를 찾을 수 없습니다.' }, { status: 404 });
+      if (submitted) {
+        throw new HttpError(403, '협약이 제출되어 KPI 항목을 추가할 수 없습니다. 관리자에게 문의해주세요.');
+      }
+    }
+  } catch (e) {
+    return errorResponse(e);
+  }
 
   const supabase = getSupabaseAdmin();
 

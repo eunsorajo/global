@@ -144,6 +144,61 @@ async function seedPartner(p) {
   return { partnerId, companyCount: companies.length, kpiCount: kpis.length };
 }
 
+// ---------- 사용자(RBAC) 시드 ----------
+//
+// users 테이블에 등록된 이메일만 로그인할 수 있다 (auth.ts signIn 콜백).
+//   - 관리자(admin): partner_id = null, 전체 권한.
+//   - 파트너(partner): partner_id 필수 (해당 파트너 KPI 만 접근).
+//
+// 멱등: 이메일(unique) 기준 upsert. 기존 role/partner_id 는 덮어쓴다.
+//
+// 실제 팀원/파트너 이메일은 아래 PLACEHOLDER 를 채워 사용하거나,
+// 앱 실행 후 /admin/users 화면에서 추가하는 것을 권장한다.
+const ADMIN_SEED = [
+  { email: 'joeunsora@gmail.com', name: '조은소라', role: 'admin' },
+  // --- 추가 SBA 팀원 관리자 (이메일 확보 후 주석 해제) ---
+  // { email: 'teammate1@sba.seoul.kr', name: '팀원1', role: 'admin' },
+  // { email: 'teammate2@sba.seoul.kr', name: '팀원2', role: 'admin' },
+];
+
+// 파트너 계정 placeholder. role='partner' 는 partnerName(또는 partnerCountry)으로
+// partners 테이블 id 를 찾아 매핑한다. 실제 이메일 확보 후 주석 해제.
+// 예시:
+// const PARTNER_SEED = [
+//   { email: 'tokyo-partner@example.com', name: '도쿄 담당자', partnerName: '도쿄도', partnerCountry: '일본(도쿄)' },
+//   { email: 'vector@example.com', name: '벡터마스 담당자', partnerName: '벡터마스', partnerCountry: '베트남' },
+// ];
+const PARTNER_SEED = [];
+
+async function seedUsers() {
+  // 관리자 upsert (partner_id = null)
+  for (const u of ADMIN_SEED) {
+    const { error } = await supabase
+      .from('users')
+      .upsert({ email: u.email.toLowerCase(), name: u.name ?? null, role: 'admin', partner_id: null }, { onConflict: 'email' });
+    if (error) throw new Error(`관리자 '${u.email}' upsert 실패: ${error.message}`);
+    console.log(`  ✓ [user] admin ${u.email}`);
+  }
+
+  // 파트너 계정 upsert (partnerName/partnerCountry → partner_id 매핑)
+  for (const u of PARTNER_SEED) {
+    let query = supabase.from('partners').select('id').limit(1);
+    if (u.partnerCountry) query = query.eq('country', u.partnerCountry);
+    if (u.partnerName) query = query.eq('name', u.partnerName);
+    const { data: prow, error: perr } = await query.maybeSingle();
+    if (perr) throw new Error(`파트너 매핑 조회 실패('${u.email}'): ${perr.message}`);
+    if (!prow) {
+      console.warn(`  ⚠ [user] partner ${u.email} — 매칭 파트너(${u.partnerCountry}/${u.partnerName})를 찾지 못해 건너뜀`);
+      continue;
+    }
+    const { error } = await supabase
+      .from('users')
+      .upsert({ email: u.email.toLowerCase(), name: u.name ?? null, role: 'partner', partner_id: prow.id }, { onConflict: 'email' });
+    if (error) throw new Error(`파트너 계정 '${u.email}' upsert 실패: ${error.message}`);
+    console.log(`  ✓ [user] partner ${u.email} → ${u.partnerCountry}/${u.partnerName}`);
+  }
+}
+
 async function main() {
   console.log('시드 시작...');
   console.log(`seed-data.json: 파트너 ${partners.length}개`);
@@ -157,6 +212,9 @@ async function main() {
     totalKpis += r.kpiCount;
     console.log(`  ✓ [${p.no}] ${p.country} / ${p.name} — 기업 ${r.companyCount}, KPI ${r.kpiCount}`);
   }
+
+  // 사용자(RBAC) 시드 — 파트너가 먼저 존재해야 매핑 가능하므로 마지막에 실행
+  await seedUsers();
 
   // ---------- 실제 DB 카운트로 검증 출력 ----------
   const [{ count: partnerCount }, { count: companyCount }, { count: kpiCount }] = await Promise.all([

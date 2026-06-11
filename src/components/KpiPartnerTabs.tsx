@@ -13,9 +13,12 @@ type Tab = 'matrix' | 'settings' | 'meetings';
 export default function KpiPartnerTabs({
   matrix,
   meetings,
+  isAdmin,
 }: {
   matrix: PartnerMatrix;
   meetings: MeetingWithFollowups[];
+  // 관리자 여부 — 회의록 탭/협약 토글 등 관리자 전용 UI 노출 제어 (서버 측 집행과 별개의 UX)
+  isAdmin: boolean;
 }) {
   const { partner, companies, kpiDefinitions } = matrix;
   const canShowMatrix = companies.length > 0 && kpiDefinitions.length > 0;
@@ -23,7 +26,7 @@ export default function KpiPartnerTabs({
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
   const initialTab: Tab =
-    tabParam === 'meetings'
+    tabParam === 'meetings' && isAdmin
       ? 'meetings'
       : tabParam === 'settings'
         ? 'settings'
@@ -46,14 +49,16 @@ export default function KpiPartnerTabs({
         <button className={tabBtn(tab === 'settings')} onClick={() => setTab('settings')}>
           KPI 정의 · 기업 관리
         </button>
-        <button className={tabBtn(tab === 'meetings')} onClick={() => setTab('meetings')}>
-          회의록 {meetings.length > 0 && <span className="text-gray-400">({meetings.length})</span>}
-        </button>
+        {isAdmin && (
+          <button className={tabBtn(tab === 'meetings')} onClick={() => setTab('meetings')}>
+            회의록 {meetings.length > 0 && <span className="text-gray-400">({meetings.length})</span>}
+          </button>
+        )}
       </div>
 
       {tab === 'matrix' && (
         canShowMatrix ? (
-          <KpiMatrix matrix={matrix} />
+          <KpiMatrix matrix={matrix} isAdmin={isAdmin} />
         ) : (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
             <p className="font-semibold text-amber-800 mb-1">
@@ -77,10 +82,10 @@ export default function KpiPartnerTabs({
       )}
 
       {tab === 'settings' && (
-        <KpiSettings partner={partner} initialDefinitions={kpiDefinitions} initialCompanies={companies} />
+        <KpiSettings partner={partner} initialDefinitions={kpiDefinitions} initialCompanies={companies} isAdmin={isAdmin} />
       )}
 
-      {tab === 'meetings' && <MeetingsTab meetings={meetings} />}
+      {tab === 'meetings' && isAdmin && <MeetingsTab meetings={meetings} />}
     </div>
   );
 }

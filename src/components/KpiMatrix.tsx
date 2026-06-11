@@ -20,10 +20,13 @@ function AchievedToggle({
   value,
   onClick,
   saving,
+  disabled,
 }: {
   value: AchievedState;
   onClick: () => void;
   saving?: boolean;
+  // 권한 없음(예: partner 의 파트너 레벨 판정) → 읽기 전용
+  disabled?: boolean;
 }) {
   const label = value === true ? '✓ 달성' : value === false ? '✗ 미달성' : '— 미정';
   const cls =
@@ -32,19 +35,21 @@ function AchievedToggle({
       : value === false
         ? 'bg-red-100 text-red-700 border-red-300'
         : 'bg-gray-50 text-gray-400 border-gray-200';
+  const inert = saving || disabled;
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={saving}
-      className={`text-xs px-2 py-0.5 rounded border ${cls} ${saving ? 'opacity-50' : 'hover:brightness-95'}`}
+      disabled={inert}
+      title={disabled ? '달성여부 판정은 관리자만 변경할 수 있습니다.' : undefined}
+      className={`text-xs px-2 py-0.5 rounded border ${cls} ${inert ? 'opacity-50' : 'hover:brightness-95'} ${disabled ? 'cursor-not-allowed' : ''}`}
     >
       {label}
     </button>
   );
 }
 
-export default function KpiMatrix({ matrix }: { matrix: PartnerMatrix }) {
+export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerMatrix; isAdmin?: boolean }) {
   const { partner, companies, kpiDefinitions } = matrix;
 
   // 셀 상태 (낙관적 업데이트)
@@ -215,6 +220,7 @@ export default function KpiMatrix({ matrix }: { matrix: PartnerMatrix }) {
                         value={defAchieved[k.id] ?? null}
                         onClick={() => saveDefAchieved(k.id)}
                         saving={savingKeys.has(`def:${k.id}`)}
+                        disabled={!isAdmin}
                       />
                     </div>
                   </th>
