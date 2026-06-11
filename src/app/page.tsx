@@ -3,6 +3,7 @@ import LoginNotice from '@/components/LoginNotice';
 import PendingNotice from '@/components/PendingNotice';
 import DirectoryList from '@/components/DirectoryList';
 import DbErrorNotice from '@/components/DbErrorNotice';
+import SheetPullPoller from '@/components/SheetPullPoller';
 import { getDirectoryList, DirectoryDataError } from '@/lib/directory-data';
 import { pageGate } from '@/lib/rbac';
 import Forbidden from '@/components/Forbidden';
@@ -46,11 +47,15 @@ export default async function Home() {
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">파트너사 목록</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          전체 파트너사 디렉토리 — 사업 · 협력 · 잠재 단계 통합 관리
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">파트너사 목록</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            전체 파트너사 디렉토리 — 사업 · 협력 · 잠재 단계 통합 관리
+          </p>
+        </div>
+        {/* 관리자 전용(이 페이지는 server 에서 admin 확정) 시트 자동 동기화 폴러 */}
+        <SheetPullPoller />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

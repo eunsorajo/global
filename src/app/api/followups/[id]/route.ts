@@ -48,3 +48,24 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   return NextResponse.json({ followup: data });
 }
+
+// DELETE: 팔로업 삭제
+// 권한: admin 전용. 회의 팔로업/디렉토리 팔로업 공용 (followups.id 만으로 삭제).
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return errorResponse(e);
+  }
+
+  const { id } = await ctx.params;
+  if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('followups').delete().eq('id', id);
+  if (error) {
+    console.error('[DELETE /api/followups/[id]]', error);
+    return NextResponse.json({ error: describeSupabaseError(error) }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}

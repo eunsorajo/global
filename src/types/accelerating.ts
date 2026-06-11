@@ -99,6 +99,8 @@ export interface PartnerDirectoryRow {
   // 양방향 동기화 안정 키 / 시각 (마이그레이션 006)
   sheet_row_id: string | null;
   synced_at: string | null;
+  // 마지막 동기화 시점의 필드값 스냅샷 (변경 감지/충돌 판정용, 마이그레이션 008)
+  synced_snapshot: Record<string, string | null> | null;
   created_at: string;
   updated_at: string;
 }

@@ -30,6 +30,20 @@ export interface FollowupRow {
   updated_at: string;
 }
 
+// 디렉토리(협력/잠재 파트너) 팔로업 row (마이그레이션 009: directory_id 기반).
+// 회의(meeting_id)가 아닌 partner_directory.id 에 직접 연결된다.
+export interface DirectoryFollowupRow {
+  id: string;
+  meeting_id: string | null;
+  directory_id: string | null;
+  content: string;
+  assignee: string | null;
+  due_date: string | null;
+  status: FollowupStatus;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------- 파싱 결과(미리보기 / 저장 요청) 타입 ----------
 
 export interface ParsedFollowup {

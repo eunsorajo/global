@@ -163,3 +163,27 @@ export async function batchWriteRanges(
     wrap(e);
   }
 }
+
+// 데이터 영역 맨 아래에 새 행(들)을 추가(append). 기존 행은 절대 덮어쓰지 않는다.
+//   - INSERT_ROWS: 기존 행 밀어내지 않고 표 끝 다음 빈 행부터 채움.
+//   - rangeA1 은 "탭명!A{HEADER_ROW}:{lastCol}{HEADER_ROW}" 같은 표 범위(append 기준).
+// 반환: 실제로 기록된 첫 행/끝 행을 알 수 있는 updatedRange (예: "탭명!A57:O57").
+export async function appendRows(
+  rangeA1: string,
+  values: (string | number)[][],
+): Promise<{ updatedRange: string | null }> {
+  if (values.length === 0) return { updatedRange: null };
+  const client = getClient();
+  try {
+    const r = await client.request<{ updates?: { updatedRange?: string } }>({
+      url: `${base()}/values/${encodeURIComponent(
+        rangeA1,
+      )}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&includeValuesInResponse=false`,
+      method: 'POST',
+      data: { range: rangeA1, values },
+    });
+    return { updatedRange: r.data.updates?.updatedRange ?? null };
+  } catch (e) {
+    wrap(e);
+  }
+}

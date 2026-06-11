@@ -5,6 +5,7 @@ import {
   createDirectoryEntry,
   DirectoryDataError,
 } from '@/lib/directory-data';
+import { trySyncRowToSheet } from '@/lib/sheet-push';
 import type { DirectoryInput } from '@/types/accelerating';
 
 // 디렉토리 목록 조회. 관리자 전용 (파트너는 디렉토리 접근 불가).
@@ -42,7 +43,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const entry = await createDirectoryEntry(body);
-    return NextResponse.json({ entry });
+    // 저장 성공 후 시트 즉시 반영(best-effort). 실패해도 저장은 유지.
+    const sync = await trySyncRowToSheet(entry.id);
+    return NextResponse.json({ entry, syncWarning: sync.syncWarning, syncNote: sync.syncNote });
   } catch (e) {
     if (e instanceof DirectoryDataError) {
       return NextResponse.json({ error: e.message }, { status: 400 });

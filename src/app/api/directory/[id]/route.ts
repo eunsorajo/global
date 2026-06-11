@@ -6,6 +6,7 @@ import {
   deleteDirectoryEntry,
   DirectoryDataError,
 } from '@/lib/directory-data';
+import { trySyncRowToSheet } from '@/lib/sheet-push';
 import type { DirectoryInput, DirectoryStatus } from '@/types/accelerating';
 
 const STATUSES: DirectoryStatus[] = ['사업', '협력', '잠재'];
@@ -37,11 +38,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         return NextResponse.json({ error: "status 는 '사업'|'협력'|'잠재' 중 하나여야 합니다." }, { status: 400 });
       }
       const result = await changeDirectoryStatus(id, body.status as DirectoryStatus);
-      return NextResponse.json(result);
+      // 변경 후 상태가 잠재/협력이면 시트 반영(best-effort). 사업으로 승격 시엔 내부에서 skip.
+      const sync = await trySyncRowToSheet(id);
+      return NextResponse.json({ ...result, syncWarning: sync.syncWarning, syncNote: sync.syncNote });
     }
     // 정보 수정
     const entry = await updateDirectoryEntry(id, body);
-    return NextResponse.json({ entry });
+    // 저장 성공 후 시트 즉시 반영(best-effort). 실패해도 저장은 유지.
+    const sync = await trySyncRowToSheet(id);
+    return NextResponse.json({ entry, syncWarning: sync.syncWarning, syncNote: sync.syncNote });
   } catch (e) {
     if (e instanceof DirectoryDataError) {
       return NextResponse.json({ error: e.message }, { status: 400 });

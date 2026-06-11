@@ -5,7 +5,8 @@ import PendingNotice from '@/components/PendingNotice';
 import Forbidden from '@/components/Forbidden';
 import DbErrorNotice from '@/components/DbErrorNotice';
 import DirectoryDetail from '@/components/DirectoryDetail';
-import { getDirectoryItem, DirectoryDataError } from '@/lib/directory-data';
+import { getDirectoryItem, getDirectoryFollowups, DirectoryDataError } from '@/lib/directory-data';
+import type { DirectoryFollowupRow } from '@/types/meeting';
 import { pageGate } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
@@ -52,10 +53,18 @@ export default async function DirectoryDetailPage({ params }: Props) {
     redirect(`/business-partners/${item.businessPartnerId}`);
   }
 
+  // 팔로업 목록(서버 로드). 실패해도 화면은 띄우고 빈 목록으로 폴백.
+  let followups: DirectoryFollowupRow[] = [];
+  try {
+    followups = await getDirectoryFollowups(id);
+  } catch {
+    followups = [];
+  }
+
   return (
     <main className="max-w-3xl mx-auto px-6 py-8">
       <Link href="/" className="text-sm text-gray-500 hover:text-blue-600 mb-6 inline-block">← 파트너사 목록으로</Link>
-      <DirectoryDetail item={item} />
+      <DirectoryDetail item={item} initialFollowups={followups} />
     </main>
   );
 }

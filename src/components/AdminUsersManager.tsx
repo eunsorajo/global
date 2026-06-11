@@ -169,7 +169,7 @@ export default function AdminUsersManager({
     }
   }
 
-  const input = 'border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400';
+  const input = 'border border-gray-300 rounded px-2 py-1 text-sm bg-white text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200';
 
   function draftFor(u: UserWithPartner) {
     return approveDraft[u.id] ?? { role: u.role, partnerId: u.partner_id ?? '' };

@@ -6,19 +6,29 @@
 //   - 위치 기반 매칭 금지. ID 열로 시트행↔DB행 매칭.
 //   - ID 없는 시트행 → DB 신규 생성(또는 name+country 매칭 시 연결) → 그 id 를 ID 열에 write-back.
 //
-// 충돌 정책:
-//   - 필드별로 판단. DB updated_at 과 synced_at, 시트값을 비교.
-//   - 양쪽 모두 마지막 동기화 이후 바뀌었고 값이 다르면 → 자동 머지 금지.
-//     sync_log 에 기록하고 그 필드는 건너뜀(데이터 유실 금지).
-//   - 그 외(한쪽만 변경)에는 last-write-wins 가 아니라 "변경된 쪽" 값을 반영.
+// 충돌 정책 (마이그레이션 008 — 자동 last-write-wins + 백업):
+//   - 필드별로 synced_snapshot(마지막 동기화 시점 값) 기준으로 어느 쪽이 바뀌었는지 판정.
+//       sheetChanged = (시트값 != snapshot[field]),  dbChanged = (DB값 != snapshot[field])
+//   - snapshot 이 없으면(미초기화) 충돌로 보지 않고 현재값으로 baseline 초기화(백업 없음).
+//   - 한쪽만 변경 → 그쪽 값을 적용.
+//   - 양쪽 모두 변경(충돌) → 자동 last-write-wins:
+//       pull 경로는 시트가 최신 → 시트값 적용,  push 경로는 DB가 최신 → DB값 적용.
+//       진 쪽(덮어쓰는) 이전 값을 sync_backup(reason='conflict-latest-wins')에 기록 후 적용.
+//   - 충돌이 아니어도 기존 non-empty 값을 덮어쓰면 sync_backup(reason='overwrite')에 기록.
+//
+// 대량변경 가드(서킷 브레이커): 자동 경로(폴링 pull / 전체 pull·both)에서 한 번에
+//   생성+수정+충돌 합이 BULK_LIMIT 를 넘으면 쓰기 없이 needsConfirmation 으로 중단.
+//   force:true 면 가드를 무시(수동 /admin/sync 에서만).
 //
 // 안전 원칙: 전체 시트 클리어/재작성 절대 금지. push 는 행/셀 단위로만 기록.
 import 'server-only';
+import { randomUUID } from 'crypto';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
 import {
   getTargetSheet,
   readRange,
   batchWriteRanges,
+  appendRows,
   colToA1,
   HEADER_ROW,
   DATA_START_ROW,
@@ -145,6 +155,61 @@ function norm(v: string | null | undefined): string {
   return (v ?? '').trim();
 }
 
+// ---------- 대량변경 가드 + 스냅샷/백업 ----------
+
+// 자동 경로(폴링 pull / 전체 pull·both)에서 한 번에 적용할 수 있는 변경(생성+수정+충돌) 상한.
+export const BULK_LIMIT = 15;
+
+// synced_snapshot 에서 특정 필드의 baseline 값 추출 (없으면 null).
+function snapValue(
+  snapshot: Record<string, string | null> | null | undefined,
+  field: DirectoryField,
+): string | null {
+  if (snapshot == null) return null;
+  const v = snapshot[field];
+  return v == null ? null : String(v);
+}
+
+// 현재 DB 행 → 스냅샷 객체(SYNC_FIELDS 만). 적용 후 baseline 갱신용.
+function buildSnapshot(values: Partial<Record<DirectoryField, string | null>>): Record<string, string | null> {
+  const snap: Record<string, string | null> = {};
+  for (const field of SYNC_FIELDS) {
+    const v = values[field];
+    snap[field] = v == null ? null : String(v);
+  }
+  return snap;
+}
+
+// sync_backup 한 건 기록(되돌리기용). 실패해도 동기화를 깨뜨리지 않게 콘솔만.
+export interface BackupEntry {
+  runId: string;
+  directoryId: string;
+  field: DirectoryField;
+  oldValue: string | null;
+  newValue: string | null;
+  source: 'pull' | 'push';
+  reason: 'conflict-latest-wins' | 'overwrite';
+}
+
+async function writeBackups(entries: BackupEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  const supabase = getSupabaseAdmin();
+  const rows = entries.map((e) => ({
+    run_id: e.runId,
+    directory_id: e.directoryId,
+    entity: 'partner_directory',
+    field: e.field,
+    old_value: e.oldValue,
+    new_value: e.newValue,
+    source: e.source,
+    reason: e.reason,
+  }));
+  const { error } = await supabase.from('sync_backup').insert(rows);
+  if (error) {
+    console.error('[sheet-sync] sync_backup 기록 실패:', describeSupabaseError(error));
+  }
+}
+
 // ---------- 시트 읽기 → 행 모델 ----------
 
 export interface SheetRow {
@@ -207,6 +272,11 @@ export interface FieldDiff {
   field: DirectoryField;
   dbValue: string | null;
   sheetValue: string | null;
+  // 충돌 자동해결 메타 (pull 미리보기/적용 공용). 일반 update 에는 없을 수 있음.
+  conflict?: boolean; // 양쪽 모두 baseline 대비 변경됨
+  resolvedValue?: string | null; // 최종 적용값 (pull=시트값 우선)
+  loserValue?: string | null; // 덮어써 백업할 이전 값 (있으면 백업 대상)
+  reason?: 'conflict-latest-wins' | 'overwrite';
 }
 
 export interface PullPlanRow {
@@ -311,26 +381,43 @@ export async function buildPlan(): Promise<SyncPlan> {
     }
 
     matchedDbIds.add(db.id);
-    const dbChanged = dbChangedSinceSync(db);
+    const snapshot = db.synced_snapshot ?? null;
 
     const updates: FieldDiff[] = [];
     const conflicts: FieldDiff[] = [];
     for (const field of SYNC_FIELDS) {
       const sheetValue = sr.values[field] ?? null;
       const dbValue = (db[field] as string | null) ?? null;
-      if (norm(sheetValue) === norm(dbValue)) continue; // 동일 → 무시
+      if (norm(sheetValue) === norm(dbValue)) continue; // 동일 → 적용할 것 없음
 
-      // 시트값 ≠ DB값. DB 도 마지막 동기화 이후 변경됐다면 → 충돌(양쪽 모두 변경 의심).
-      if (dbChanged) {
-        conflicts.push({ field, dbValue, sheetValue });
-      } else {
-        // DB 는 그대로(동기화 이후 미변경) → 시트가 변경된 것으로 보고 시트→DB 반영.
-        updates.push({ field, dbValue, sheetValue });
-      }
+      // snapshot 기준 변경 감지. snapshot 이 null 이면 baseline 미초기화 →
+      // 충돌로 보지 않고 시트값을 적용(첫 실행 안전, 백업 없음).
+      const base = snapValue(snapshot, field);
+      const sheetChanged = snapshot == null || norm(sheetValue) !== norm(base);
+      const dbChanged = snapshot != null && norm(dbValue) !== norm(base);
+      const isConflict = sheetChanged && dbChanged;
+
+      // pull = 시트 최신 우선 → 시트값 적용.
+      const resolvedValue = sheetValue;
+      // 덮어쓰는 이전 DB 값이 non-empty 면 백업 대상.
+      const loserValue = norm(dbValue) !== '' ? dbValue : null;
+
+      const diff: FieldDiff = {
+        field,
+        dbValue,
+        sheetValue,
+        conflict: isConflict,
+        resolvedValue,
+        loserValue,
+        reason: isConflict ? 'conflict-latest-wins' : loserValue != null ? 'overwrite' : undefined,
+      };
+      if (isConflict) conflicts.push(diff);
+      else updates.push(diff);
     }
 
+    // 충돌도 자동 적용(시트 우선)되므로 행 액션은 변경 여부로만 구분.
     const action: ChangeAction =
-      conflicts.length > 0 ? 'conflict' : updates.length > 0 ? 'update' : 'noop';
+      updates.length + conflicts.length > 0 ? (conflicts.length > 0 ? 'conflict' : 'update') : 'noop';
     pullRows.push({
       rowNumber: sr.rowNumber,
       id: db.id,
@@ -393,32 +480,69 @@ export async function buildPlan(): Promise<SyncPlan> {
 export interface ApplyResult {
   created: number;
   updated: number;
+  // 자동 해결된 충돌(최신 우선 적용 + 백업). 더 이상 '건너뜀'이 아님.
   conflicts: ConflictDetail[];
   details: ConflictDetail[];
+  // 기록된 백업 건수(충돌 + overwrite). UI 표시용.
+  backups: number;
+  // 대량변경 가드 발동 시(쓰기 없이 중단). force:true 면 발동하지 않음.
+  needsConfirmation?: boolean;
+  plannedChanges?: number;
+  // 이 실행의 run_id (백업 묶음 식별).
+  runId?: string;
 }
 
 export interface ConflictDetail {
   name: string;
   id: string | null;
   field: DirectoryField;
-  dbValue: string | null;
-  sheetValue: string | null;
-  action: 'skipped-conflict';
+  dbValue: string | null; // 충돌 시 진 쪽(덮어쓴) DB 값
+  sheetValue: string | null; // 이긴 값(적용된 시트 값)
+  action: 'resolved-latest-wins';
 }
 
-// pull 적용: 신규 생성 / 변경 반영 / 충돌 기록(건너뜀) + ID 열 write-back.
+// 대량변경 가드 발동 시 반환 (쓰기 없음).
+function guardTripped(plannedChanges: number): ApplyResult {
+  return {
+    created: 0,
+    updated: 0,
+    conflicts: [],
+    details: [],
+    backups: 0,
+    needsConfirmation: true,
+    plannedChanges,
+  };
+}
+
+// pull 적용: 신규 생성 / 변경 반영 / 충돌 자동해결(시트 최신 우선 + 백업) + ID 열 write-back.
 //   - 시트에 ID 열이 없으면 헤더에 "ID" 추가 후 각 행 id 기록.
-//   - synced_at 갱신, sheet_row_id 에 동일 id 저장.
-export async function applyPull(): Promise<ApplyResult> {
+//   - synced_at / synced_snapshot 갱신, sheet_row_id 에 동일 id 저장.
+//   - opts.force 가 false(자동 경로)이고 변경 합계가 BULK_LIMIT 초과면 쓰기 없이 중단.
+export async function applyPull(opts: { force?: boolean } = {}): Promise<ApplyResult> {
   const { header, title, rows: sheetRows } = await readSheet();
   const dirRows = await readDirectory();
   const plan = await buildPlan();
 
+  // ---- 대량변경 가드 (force 아닐 때만) ----
+  const plannedChanges = plan.pull.rows.reduce(
+    (n, r) => n + (r.action === 'create' ? 1 : r.updates.length + r.conflicts.length),
+    0,
+  );
+  if (!opts.force && plannedChanges > BULK_LIMIT) {
+    return guardTripped(plannedChanges);
+  }
+
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
+  const runId = randomUUID();
   const conflicts: ConflictDetail[] = [];
+  const backups: BackupEntry[] = [];
   let created = 0;
   let updated = 0;
+
+  // DB 행 조회(스냅샷 baseline 계산용)
+  const dirById = new Map<string, PartnerDirectoryRow>();
+  for (const d of dirRows) dirById.set(d.id, d);
 
   // ID 열 위치 결정 (없으면 헤더 마지막+1 컬럼에 신설)
   const idCol = header.idCol != null ? header.idCol : header.lastCol + 1;
@@ -442,8 +566,14 @@ export async function applyPull(): Promise<ApplyResult> {
 
     if (pr.action === 'create') {
       const payload: Record<string, unknown> = { status: '잠재', synced_at: now };
-      for (const u of pr.updates) payload[u.field] = u.sheetValue;
+      const snapVals: Partial<Record<DirectoryField, string | null>> = {};
+      for (const u of pr.updates) {
+        payload[u.field] = u.sheetValue;
+        snapVals[u.field] = u.sheetValue;
+      }
       if (!payload.name) continue; // 안전망
+      // 신규 행은 시트값이 곧 baseline → synced_snapshot 초기화(백업 없음).
+      payload.synced_snapshot = buildSnapshot(snapVals);
       const { data, error } = await supabase
         .from('partner_directory')
         .insert(payload)
@@ -465,7 +595,10 @@ export async function applyPull(): Promise<ApplyResult> {
     }
 
     if (pr.action === 'conflict' || pr.action === 'update') {
-      // 충돌 필드는 건너뛰고 sync_log 기록
+      const db = pr.id ? dirById.get(pr.id) : undefined;
+      const allFieldDiffs = [...pr.updates, ...pr.conflicts];
+
+      // 충돌은 시트 최신 우선으로 자동 적용. 진 쪽(DB) 값 백업.
       for (const c of pr.conflicts) {
         conflicts.push({
           name: pr.name,
@@ -473,17 +606,45 @@ export async function applyPull(): Promise<ApplyResult> {
           field: c.field,
           dbValue: c.dbValue,
           sheetValue: c.sheetValue,
-          action: 'skipped-conflict',
+          action: 'resolved-latest-wins',
         });
       }
-      // 비충돌 변경 필드만 반영
-      if (pr.updates.length > 0 && pr.id) {
+
+      if (pr.id && allFieldDiffs.length > 0) {
         const payload: Record<string, unknown> = {
           updated_at: now,
           synced_at: now,
           sheet_row_id: pr.id,
         };
-        for (const u of pr.updates) payload[u.field] = u.sheetValue;
+        // 모든 변경 필드(충돌 포함)를 시트값으로 적용.
+        for (const u of allFieldDiffs) {
+          payload[u.field] = u.resolvedValue ?? u.sheetValue;
+          // non-empty 이전 값 덮어쓰기 → 백업.
+          if (u.loserValue != null) {
+            backups.push({
+              runId,
+              directoryId: pr.id,
+              field: u.field,
+              oldValue: u.loserValue,
+              newValue: (u.resolvedValue ?? u.sheetValue) ?? null,
+              source: 'pull',
+              reason: u.reason ?? (u.conflict ? 'conflict-latest-wins' : 'overwrite'),
+            });
+          }
+        }
+        // baseline 갱신: 적용 후 (DB == 시트) 인 상태의 스냅샷.
+        const newSnap = db?.synced_snapshot ? { ...db.synced_snapshot } : {};
+        for (const field of SYNC_FIELDS) {
+          // 이번에 변경된 필드는 시트값, 아니면 현재 DB값을 baseline 으로.
+          const applied = allFieldDiffs.find((u) => u.field === field);
+          if (applied) newSnap[field] = (applied.resolvedValue ?? applied.sheetValue) ?? null;
+          else {
+            const cur = db ? ((db[field] as string | null) ?? null) : null;
+            newSnap[field] = cur;
+          }
+        }
+        payload.synced_snapshot = newSnap;
+
         const { error } = await supabase
           .from('partner_directory')
           .update(payload)
@@ -491,11 +652,15 @@ export async function applyPull(): Promise<ApplyResult> {
         if (error) throw new SyncError(describeSupabaseError(error));
         updated += 1;
       } else if (pr.id) {
-        // 변경은 없지만 synced_at 갱신(매칭 확정 시각)
-        await supabase
-          .from('partner_directory')
-          .update({ synced_at: now, sheet_row_id: pr.id })
-          .eq('id', pr.id);
+        // 변경은 없지만 synced_at / 스냅샷 정착(매칭 확정 시각)
+        const snapPayload: Record<string, unknown> = { synced_at: now, sheet_row_id: pr.id };
+        if (db && db.synced_snapshot == null) {
+          // baseline 미초기화 → 현재값으로 초기화(백업 없음).
+          const snapVals: Partial<Record<DirectoryField, string | null>> = {};
+          for (const field of SYNC_FIELDS) snapVals[field] = (db[field] as string | null) ?? null;
+          snapPayload.synced_snapshot = buildSnapshot(snapVals);
+        }
+        await supabase.from('partner_directory').update(snapPayload).eq('id', pr.id);
       }
     }
 
@@ -508,12 +673,22 @@ export async function applyPull(): Promise<ApplyResult> {
     }
   }
 
-  // noop(동일) 행도 ID 열이 비어 있으면 write-back (안정 키 정착)
+  // noop(동일) 행도 ID 열이 비어 있으면 write-back (안정 키 정착) + 스냅샷 초기화
   for (const pr of plan.pull.rows) {
     if (pr.action !== 'noop' || !pr.id) continue;
     const sr = srByRow.get(pr.rowNumber);
     if (sr && (header.idCol == null || !sr.id)) {
       idWriteBack.push({ range: `${title}!${idColLetter}${pr.rowNumber}`, values: [[pr.id]] });
+    }
+    // baseline 미초기화 행이면 현재값으로 스냅샷 초기화(백업 없음).
+    const db = dirById.get(pr.id);
+    if (db && db.synced_snapshot == null) {
+      const snapVals: Partial<Record<DirectoryField, string | null>> = {};
+      for (const field of SYNC_FIELDS) snapVals[field] = (db[field] as string | null) ?? null;
+      await supabase
+        .from('partner_directory')
+        .update({ synced_snapshot: buildSnapshot(snapVals), synced_at: now })
+        .eq('id', pr.id);
     }
   }
 
@@ -522,16 +697,24 @@ export async function applyPull(): Promise<ApplyResult> {
     await batchWriteRanges(idWriteBack);
   }
 
-  // dirRows 미사용 경고 회피(향후 검증 로직 확장 여지)
-  void dirRows;
+  // 백업 일괄 기록
+  await writeBackups(backups);
 
-  return { created, updated, conflicts, details: conflicts };
+  return {
+    created,
+    updated,
+    conflicts,
+    details: conflicts,
+    backups: backups.length,
+    runId,
+  };
 }
 
 // ---------- 적용: PUSH (DB → 시트) ----------
-// DB 변경분을 해당 시트 행의 해당 셀만 갱신. 충돌(양쪽 변경)은 건너뛰고 기록.
-
-export async function applyPush(): Promise<ApplyResult> {
+// DB 변경분을 해당 시트 행의 해당 셀만 갱신. push 는 DB 최신 정책(last-write-wins).
+//   - 충돌(시트도 변경됨) → DB값으로 자동 적용하되, 덮어쓰는 시트 이전값을 백업.
+//   - opts.force 가 false(자동 both 경로)이고 변경 셀 합이 BULK_LIMIT 초과면 쓰기 없이 중단.
+export async function applyPush(opts: { force?: boolean } = {}): Promise<ApplyResult> {
   const { header, title, rows: sheetRows } = await readSheet();
   const dirRows = await readDirectory();
 
@@ -543,21 +726,29 @@ export async function applyPush(): Promise<ApplyResult> {
 
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
+  const runId = randomUUID();
 
   const sheetRowByDbId = new Map<string, (typeof sheetRows)[number]>();
   for (const sr of sheetRows) if (sr.id) sheetRowByDbId.set(sr.id, sr);
 
-  const writes: { range: string; values: (string | number)[][] }[] = [];
-  const conflicts: ConflictDetail[] = [];
-  const syncedIds: string[] = [];
-  let updated = 0;
+  // ---- 변경 셀 계산(가드용 사전 집계 겸 적용 목록) ----
+  interface PushCell {
+    db: PartnerDirectoryRow;
+    sr: SheetRow;
+    field: DirectoryField;
+    col: number;
+    dbValue: string | null;
+    sheetValue: string | null;
+    conflict: boolean; // 시트도 baseline 대비 변경됨
+  }
+  const cells: PushCell[] = [];
 
   for (const db of dirRows) {
     const sr = sheetRowByDbId.get(db.id);
     if (!sr) continue;
     if (!dbChangedSinceSync(db)) continue;
 
-    let wroteAny = false;
+    const snapshot = db.synced_snapshot ?? null;
     for (const field of SYNC_FIELDS) {
       const col = header.fieldCol[field];
       if (col === undefined) continue; // 시트에 해당 열 없음
@@ -565,49 +756,250 @@ export async function applyPush(): Promise<ApplyResult> {
       const sheetValue = sr.values[field] ?? null;
       if (norm(dbValue) === norm(sheetValue)) continue;
 
-      // 충돌 검사: 시트값이 (마지막 동기화 시점의) DB 값과도 다르면 양쪽 변경 의심.
-      // synced_at 이후 시트 편집 메타가 없어, 보수적으로:
-      //   DB 변경 && 시트값이 비어있지 않고 DB와 다름 → 충돌 후보.
-      // 단, 시트값이 비어있으면(미입력) DB→시트 채움은 안전하므로 그대로 push.
-      if (sheetValue != null && norm(sheetValue) !== '') {
-        // 양쪽 모두 값이 있고 다름 → 충돌로 기록, push 건너뜀(데이터 유실 금지)
-        conflicts.push({
-          name: db.name,
-          id: db.id,
-          field,
-          dbValue,
-          sheetValue,
-          action: 'skipped-conflict',
-        });
-        continue;
-      }
+      // 시트가 baseline 대비 변경됐고 non-empty 면 충돌(양쪽 변경). DB 우선 적용 + 시트값 백업.
+      const base = snapValue(snapshot, field);
+      const sheetChanged = snapshot == null || norm(sheetValue) !== norm(base);
+      const conflict = sheetChanged && norm(sheetValue) !== '';
+      cells.push({ db, sr, field, col, dbValue, sheetValue, conflict });
+    }
+  }
 
-      const cell = colToA1(col);
-      writes.push({
-        range: `${title}!${cell}${sr.rowNumber}`,
-        values: [[valueToCell(dbValue)]],
+  // ---- 대량변경 가드 (force 아닐 때만) ----
+  if (!opts.force && cells.length > BULK_LIMIT) {
+    return guardTripped(cells.length);
+  }
+
+  const writes: { range: string; values: (string | number)[][] }[] = [];
+  const conflicts: ConflictDetail[] = [];
+  const backups: BackupEntry[] = [];
+  const syncedIds = new Set<string>();
+
+  for (const c of cells) {
+    // 덮어쓰는 시트값이 non-empty 면 백업(충돌이면 conflict, 아니면 overwrite).
+    if (norm(c.sheetValue) !== '') {
+      backups.push({
+        runId,
+        directoryId: c.db.id,
+        field: c.field,
+        oldValue: c.sheetValue,
+        newValue: c.dbValue,
+        source: 'push',
+        reason: c.conflict ? 'conflict-latest-wins' : 'overwrite',
       });
-      wroteAny = true;
     }
-    if (wroteAny) {
-      updated += 1;
-      syncedIds.push(db.id);
+    if (c.conflict) {
+      conflicts.push({
+        name: c.db.name,
+        id: c.db.id,
+        field: c.field,
+        dbValue: c.sheetValue, // 진 쪽(덮어쓴 시트 값)
+        sheetValue: c.dbValue, // 이긴 값(적용된 DB 값)
+        action: 'resolved-latest-wins',
+      });
     }
+    const cell = colToA1(c.col);
+    writes.push({
+      range: `${title}!${cell}${c.sr.rowNumber}`,
+      values: [[valueToCell(c.dbValue)]],
+    });
+    syncedIds.add(c.db.id);
   }
 
   if (writes.length > 0) {
     await batchWriteRanges(writes);
   }
-  // 실제 push 된 행만 synced_at 갱신 (충돌만 있던 행은 미갱신 → 다음에도 감지)
-  if (syncedIds.length > 0) {
+  await writeBackups(backups);
+
+  // 실제 push 된 행: synced_at + synced_snapshot(적용 후 시트=DB 상태) 갱신.
+  const updated = syncedIds.size;
+  for (const id of syncedIds) {
+    const db = dirRows.find((d) => d.id === id);
+    if (!db) continue;
+    const snapVals: Partial<Record<DirectoryField, string | null>> = {};
+    for (const field of SYNC_FIELDS) snapVals[field] = (db[field] as string | null) ?? null;
     const { error } = await supabase
       .from('partner_directory')
-      .update({ synced_at: now })
-      .in('id', syncedIds);
+      .update({ synced_at: now, synced_snapshot: buildSnapshot(snapVals) })
+      .eq('id', id);
     if (error) throw new SyncError(describeSupabaseError(error));
   }
 
-  return { created: 0, updated, conflicts, details: conflicts };
+  return { created: 0, updated, conflicts, details: conflicts, backups: backups.length, runId };
+}
+
+// ---------- 단일 행 push / append (저장 즉시 시트 반영용) ----------
+//
+// 디렉토리 생성/수정 API 가 DB 커밋 후 best-effort 로 호출한다.
+//   - pushRow: 기존 시트 행(ID 매칭)의 변경 셀만 갱신.
+//   - appendRow: 시트에 대응 행이 없을 때 표 맨 아래에 새 행 추가(+ ID 열 기록).
+// 두 함수 모두:
+//   - status 가 '잠재' | '협력' 인 행만 처리. 그 외(사업 등)는 조용히 skip (didWrite=false).
+//   - 시트 ID 열이 없으면 skip(전체 pull 로 ID 열을 먼저 정착시켜야 함).
+//   - 절대 다른 행/탭을 건드리지 않는다. append 는 INSERT_ROWS 로 기존 행 보존.
+
+// 시트 연동 대상 상태 (잠재 DB 시트는 잠재/협력 단계 파트너만 대응).
+const SHEET_LINKED_STATUSES: ReadonlySet<string> = new Set(['잠재', '협력']);
+
+export interface RowSyncResult {
+  didWrite: boolean; // 실제로 시트에 쓰기를 했는지
+  reason?: string; // skip 사유(로깅용)
+}
+
+// id 로 디렉토리 단건 조회 (status 무관).
+async function readDirectoryById(id: string): Promise<PartnerDirectoryRow | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('partner_directory')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new SyncError(describeSupabaseError(error));
+  return (data as PartnerDirectoryRow | null) ?? null;
+}
+
+// 디렉토리 행(잠재/협력)을 시트의 기존 대응 행에 셀 단위로 push.
+// DB 가 방금 저장된 단일 편집의 권한원천이므로, 이 경로는 충돌 머지 없이
+// 변경된 셀만 DB 값으로 덮어쓴다(저장 즉시 반영 목적). 다른 셀/행은 손대지 않음.
+export async function pushRow(id: string): Promise<RowSyncResult> {
+  const db = await readDirectoryById(id);
+  if (!db) return { didWrite: false, reason: 'not-found' };
+  if (!SHEET_LINKED_STATUSES.has(db.status)) {
+    return { didWrite: false, reason: `status=${db.status} (시트 미연동)` };
+  }
+
+  const { header, title, rows: sheetRows } = await readSheet();
+  if (header.idCol == null) {
+    return { didWrite: false, reason: 'no-id-column' };
+  }
+
+  // 시트 행 찾기: sheet_row_id 우선, 없으면 id 로 ID 열 매칭.
+  const key = db.sheet_row_id ?? db.id;
+  const sr = sheetRows.find((r) => r.id && r.id === key);
+  if (!sr) {
+    // 시트에 대응 행 없음 → push 불가(여기서 append 하지 않음. 호출부가 생성 경로에서 append 사용).
+    return { didWrite: false, reason: 'row-not-in-sheet' };
+  }
+
+  const writes: { range: string; values: (string | number)[][] }[] = [];
+  const backups: BackupEntry[] = [];
+  const runId = randomUUID();
+  const snapshot = db.synced_snapshot ?? null;
+  for (const field of SYNC_FIELDS) {
+    const col = header.fieldCol[field];
+    if (col === undefined) continue; // 시트에 해당 열 없음
+    const dbValue = (db[field] as string | null) ?? null;
+    const sheetValue = sr.values[field] ?? null;
+    if (norm(dbValue) === norm(sheetValue)) continue; // 동일 → skip
+    // 시트의 기존 값이 DB와 다르고 non-empty 면 덮어쓰기 전에 백업(push=DB 최신 정책 유지).
+    if (norm(sheetValue) !== '') {
+      const base = snapValue(snapshot, field);
+      const sheetChanged = snapshot == null || norm(sheetValue) !== norm(base);
+      backups.push({
+        runId,
+        directoryId: db.id,
+        field,
+        oldValue: sheetValue,
+        newValue: dbValue,
+        source: 'push',
+        reason: sheetChanged ? 'conflict-latest-wins' : 'overwrite',
+      });
+    }
+    const cell = colToA1(col);
+    writes.push({ range: `${title}!${cell}${sr.rowNumber}`, values: [[valueToCell(dbValue)]] });
+  }
+
+  if (writes.length === 0) {
+    // 변경 셀 없음 — 매핑/시각/스냅샷만 정착.
+    await touchSynced(id, sr.id ?? db.id, db);
+    return { didWrite: false, reason: 'no-diff' };
+  }
+
+  await batchWriteRanges(writes);
+  await writeBackups(backups);
+  await touchSynced(id, sr.id ?? db.id, db);
+  return { didWrite: true };
+}
+
+// 디렉토리 행(잠재/협력)을 시트 표 맨 아래에 새 행으로 append.
+//   - 헤더 레이아웃에 따라 각 필드를 해당 열에 배치, ID 열에는 db.id 기록.
+//   - INSERT_ROWS append → 기존 행/다른 탭 불변.
+//   - 성공 시 sheet_row_id=db.id, synced_at 갱신.
+export async function appendRow(id: string): Promise<RowSyncResult> {
+  const db = await readDirectoryById(id);
+  if (!db) return { didWrite: false, reason: 'not-found' };
+  if (!SHEET_LINKED_STATUSES.has(db.status)) {
+    return { didWrite: false, reason: `status=${db.status} (시트 미연동)` };
+  }
+
+  const { header, title, rows: sheetRows } = await readSheet();
+  if (header.idCol == null) {
+    return { didWrite: false, reason: 'no-id-column' };
+  }
+
+  // 이미 시트에 대응 행이 있으면 append 대신 push 로 위임(중복 방지).
+  const existingKey = db.sheet_row_id ?? db.id;
+  if (sheetRows.some((r) => r.id && r.id === existingKey)) {
+    return pushRow(id);
+  }
+
+  // 헤더에서 ID 열 + 매핑된 필드 열들의 최대 인덱스까지 배열 구성.
+  const maxCol = Math.max(
+    header.idCol,
+    ...Object.values(header.fieldCol).filter((v): v is number => v !== undefined),
+  );
+  const rowArr: string[] = new Array(maxCol + 1).fill('');
+  for (const field of SYNC_FIELDS) {
+    const col = header.fieldCol[field];
+    if (col === undefined) continue;
+    rowArr[col] = valueToCell((db[field] as string | null) ?? null);
+  }
+  rowArr[header.idCol] = db.id;
+
+  // append 기준 범위: 헤더 행(표 인식용). INSERT_ROWS 로 표 끝 다음 행에 추가됨.
+  const lastColLetter = colToA1(maxCol);
+  const appendRange = `${title}!A${HEADER_ROW}:${lastColLetter}${HEADER_ROW}`;
+  await appendRows(appendRange, [rowArr]);
+
+  await touchSynced(id, db.id, db);
+  return { didWrite: true };
+}
+
+// sheet_row_id / synced_at / synced_snapshot 갱신 (push/append 후 매핑·시각·baseline 정착).
+//   - db 를 넘기면 그 시점의 필드값으로 synced_snapshot 을 새로 기록(시트=DB 상태의 baseline).
+async function touchSynced(
+  id: string,
+  sheetRowId: string,
+  db?: PartnerDirectoryRow,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const payload: Record<string, unknown> = {
+    sheet_row_id: sheetRowId,
+    synced_at: new Date().toISOString(),
+  };
+  if (db) {
+    const snapVals: Partial<Record<DirectoryField, string | null>> = {};
+    for (const field of SYNC_FIELDS) snapVals[field] = (db[field] as string | null) ?? null;
+    payload.synced_snapshot = buildSnapshot(snapVals);
+  }
+  const { error } = await supabase.from('partner_directory').update(payload).eq('id', id);
+  if (error) throw new SyncError(describeSupabaseError(error));
+}
+
+// 생성/수정 공용 진입점: 시트 대응 행이 있으면 push, 없으면 append.
+// best-effort — 실패는 호출부에서 swallow(저장은 이미 성공). 여기서는 예외를 그대로 던진다.
+export async function syncRowToSheet(id: string): Promise<RowSyncResult> {
+  const db = await readDirectoryById(id);
+  if (!db) return { didWrite: false, reason: 'not-found' };
+  if (!SHEET_LINKED_STATUSES.has(db.status)) {
+    return { didWrite: false, reason: `status=${db.status} (시트 미연동)` };
+  }
+  const { header, rows: sheetRows } = await readSheet();
+  if (header.idCol == null) return { didWrite: false, reason: 'no-id-column' };
+  const key = db.sheet_row_id ?? db.id;
+  if (sheetRows.some((r) => r.id && r.id === key)) {
+    return pushRow(id);
+  }
+  return appendRow(id);
 }
 
 // ---------- sync_log 기록 ----------

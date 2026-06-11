@@ -11,6 +11,7 @@ import type {
   DirectoryInput,
   DirectoryStatus,
 } from '@/types/accelerating';
+import type { DirectoryFollowupRow, FollowupStatus } from '@/types/meeting';
 
 export class DirectoryDataError extends Error {}
 
@@ -243,5 +244,113 @@ export async function deleteDirectoryEntry(id: string): Promise<void> {
   }
 
   const { error } = await supabase.from('partner_directory').delete().eq('id', id);
+  if (error) throw new DirectoryDataError(describeSupabaseError(error));
+}
+
+// ---------- 디렉토리(협력/잠재 파트너) 팔로업 ----------
+// followups 테이블을 회의 팔로업과 공유하되 directory_id 로 구분(마이그레이션 009).
+
+const VALID_FOLLOWUP_STATUS: FollowupStatus[] = ['pending', 'in_progress', 'completed'];
+
+export interface DirectoryFollowupInput {
+  content: string;
+  assignee?: string | null;
+  due_date?: string | null;
+}
+
+// 특정 디렉토리 파트너의 팔로업 목록 (미완료 우선 → 기한 오름차순 → 생성순).
+export async function getDirectoryFollowups(
+  directoryId: string,
+): Promise<DirectoryFollowupRow[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('followups')
+    .select('*')
+    .eq('directory_id', directoryId)
+    .order('created_at', { ascending: true });
+  if (error) throw new DirectoryDataError(describeSupabaseError(error));
+
+  const rows = (data ?? []) as DirectoryFollowupRow[];
+  const rank: Record<FollowupStatus, number> = { pending: 0, in_progress: 1, completed: 2 };
+  rows.sort((a, b) => {
+    const s = rank[a.status] - rank[b.status];
+    if (s !== 0) return s;
+    // 미완료 항목은 기한이 빠른 것 먼저(기한 없는 건 뒤로)
+    const ad = a.due_date ?? '9999-12-31';
+    const bd = b.due_date ?? '9999-12-31';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return a.created_at.localeCompare(b.created_at);
+  });
+  return rows;
+}
+
+// 디렉토리 파트너 팔로업 생성. content 필수, status 기본 pending.
+export async function createDirectoryFollowup(
+  directoryId: string,
+  input: DirectoryFollowupInput,
+): Promise<DirectoryFollowupRow> {
+  if (!input.content || !input.content.trim()) {
+    throw new DirectoryDataError('내용(content)은 필수입니다.');
+  }
+  const supabase = getSupabaseAdmin();
+
+  // 존재하는 디렉토리인지 확인(잘못된 FK 방지 + 명확한 에러)
+  const dirRes = await supabase
+    .from('partner_directory')
+    .select('id')
+    .eq('id', directoryId)
+    .maybeSingle();
+  if (dirRes.error) throw new DirectoryDataError(describeSupabaseError(dirRes.error));
+  if (!dirRes.data) throw new DirectoryDataError('해당 파트너사를 찾을 수 없습니다.');
+
+  const assignee =
+    typeof input.assignee === 'string' && input.assignee.trim() === ''
+      ? null
+      : input.assignee ?? null;
+  const dueDate =
+    typeof input.due_date === 'string' && input.due_date.trim() === ''
+      ? null
+      : input.due_date ?? null;
+
+  const { data, error } = await supabase
+    .from('followups')
+    .insert({
+      directory_id: directoryId,
+      meeting_id: null,
+      content: input.content.trim(),
+      assignee,
+      due_date: dueDate,
+      status: 'pending',
+    })
+    .select('*')
+    .single();
+  if (error) throw new DirectoryDataError(describeSupabaseError(error));
+  return data as DirectoryFollowupRow;
+}
+
+// 팔로업 상태 변경 (회의/디렉토리 공용 — followups.id 만으로 갱신).
+export async function updateFollowupStatus(
+  id: string,
+  status: FollowupStatus,
+): Promise<DirectoryFollowupRow> {
+  if (!VALID_FOLLOWUP_STATUS.includes(status)) {
+    throw new DirectoryDataError('잘못된 상태값입니다.');
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('followups')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new DirectoryDataError(describeSupabaseError(error));
+  if (!data) throw new DirectoryDataError('해당 팔로업을 찾을 수 없습니다.');
+  return data as DirectoryFollowupRow;
+}
+
+// 팔로업 삭제 (회의/디렉토리 공용).
+export async function deleteFollowup(id: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('followups').delete().eq('id', id);
   if (error) throw new DirectoryDataError(describeSupabaseError(error));
 }
