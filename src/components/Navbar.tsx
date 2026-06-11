@@ -1,8 +1,11 @@
 import Link from 'next/link';
 import { auth, signIn, signOut } from '@/auth';
+import { getNotificationBadgeCount } from '@/lib/notification-data';
 
 export default async function Navbar() {
   const session = await auth();
+  // 로그인 상태에서만 알림 카운트 계산 (실패 시 0 폴백)
+  const badgeCount = session ? await getNotificationBadgeCount() : 0;
 
   return (
     <nav className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -12,15 +15,19 @@ export default async function Navbar() {
 
       <div className="flex items-center gap-6 text-sm text-gray-600">
         <Link href="/" className="hover:text-blue-600 transition-colors">파트너 목록</Link>
+        <Link href="/kpi" className="hover:text-blue-600 transition-colors">KPI 관리</Link>
         <Link href="/calendar" className="hover:text-blue-600 transition-colors">회의 일정</Link>
-        <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 작성</Link>
-        <Link href="/chat" className="hover:text-blue-600 transition-colors">AI 채팅</Link>
+        <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 가져오기</Link>
 
 {session ? (
           <>
             <Link href="/notifications" className="hover:text-blue-600 transition-colors flex items-center gap-1">
               알림
-              <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">1</span>
+              {badgeCount > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full min-w-4 h-4 px-1 flex items-center justify-center leading-none">
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              )}
             </Link>
             <form action={async () => { 'use server'; await signOut(); }}>
               <button type="submit" className="hover:text-blue-600 transition-colors">로그아웃</button>
