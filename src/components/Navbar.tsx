@@ -29,6 +29,7 @@ export default async function Navbar() {
             <Link href="/" className="hover:text-blue-600 transition-colors">파트너사 목록</Link>
             <Link href="/business-partners" className="hover:text-blue-600 transition-colors">사업파트너 관리</Link>
             <Link href="/meetings/new" className="hover:text-blue-600 transition-colors">회의록 가져오기</Link>
+            <Link href="/admin/sync" className="hover:text-blue-600 transition-colors">시트 동기화</Link>
             {isSuperAdmin && (
               <Link href="/admin/users" className="hover:text-blue-600 transition-colors">사용자 관리</Link>
             )}

@@ -89,6 +89,16 @@ export interface PartnerDirectoryRow {
   last_contact_date: string | null; // date (YYYY-MM-DD)
   discovery_note: string | null;
   note: string | null;
+  // 시트("1-1. 잠재 파트너사 DB") 매핑용 확장 컬럼 (마이그레이션 006)
+  city: string | null; // 도시
+  category: string | null; // 구분
+  biz_summary: string | null; // 주요 사업
+  sba_owner: string | null; // 담당자 (SBA 내부)
+  contact_title: string | null; // 직급 (파트너 담당자)
+  future_plan: string | null; // 향후 협업계획
+  // 양방향 동기화 안정 키 / 시각 (마이그레이션 006)
+  sheet_row_id: string | null;
+  synced_at: string | null;
   created_at: string;
   updated_at: string;
 }
