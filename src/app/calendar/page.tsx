@@ -1,10 +1,15 @@
 import { auth } from '@/auth';
-import { redirect } from 'next/navigation';
+import LoginNotice from '@/components/LoginNotice';
 import CalendarView from '@/components/CalendarView';
 
+export const dynamic = 'force-dynamic';
+
 export default async function CalendarPage() {
+  // 인증 이후에만 캘린더 조회. 토큰 갱신 실패 시에도 재로그인 안내.
   const session = await auth();
-  if (!session?.accessToken) redirect('/api/auth/signin');
+  if (!session || !session.accessToken || session.error) {
+    return <LoginNotice title="캘린더 연동을 위해 로그인이 필요합니다" />;
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-6 flex flex-col" style={{ minHeight: 'calc(100vh - 64px)' }}>
