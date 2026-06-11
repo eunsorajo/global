@@ -11,8 +11,11 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 // 알림은 "조회 시 계산"하므로(notification-data.ts) 여기서 적재하지 않는다.
 //
 // 인증:
-//   CRON_SECRET 환경변수가 설정된 경우 Authorization: Bearer <secret> 검증.
-//   미설정 시 통과(Vercel Cron 기본 호출과 호환).
+//   - CRON_SECRET 환경변수가 설정된 경우: Authorization: Bearer <secret> 필수.
+//     (Vercel 은 CRON_SECRET 환경변수가 있으면 크론 호출에 해당 헤더를 자동 첨부)
+//   - 미설정 시: Vercel Cron 호출 흔적(x-vercel-cron 헤더 또는 vercel-cron User-Agent)이
+//     있어야 통과. 브라우저 등 일반 호출은 401. (완전한 인증은 아니므로
+//     Vercel 환경변수에 CRON_SECRET 등록을 권장 — 운영 매뉴얼 참고)
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +29,12 @@ export async function GET(req: NextRequest) {
   if (secret) {
     const auth = req.headers.get('authorization');
     if (auth !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+  } else {
+    const ua = req.headers.get('user-agent') ?? '';
+    const isVercelCron = req.headers.get('x-vercel-cron') != null || ua.includes('vercel-cron');
+    if (!isVercelCron) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
   }

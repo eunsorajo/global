@@ -253,15 +253,29 @@ async function readSheet(): Promise<{ header: HeaderLayout; title: string; rows:
 
 // ---------- DB 읽기 ----------
 
-// status='잠재' 디렉토리 행 전체 (시트는 잠재 파트너 전용 탭).
+// 시트 연동 상태(잠재/협력) 디렉토리 행 전체.
+// 잠재→협력 승격 후에도 시트 행이 남아 단건 push(pushRow) 대상이므로
+// 전체 pull/push 도 동일하게 SHEET_LINKED_STATUSES 와 맞춘다.
 async function readDirectory(): Promise<PartnerDirectoryRow[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from('partner_directory')
     .select('*')
-    .eq('status', '잠재');
+    .in('status', Array.from(SHEET_LINKED_STATUSES));
   if (error) throw new SyncError(describeSupabaseError(error));
   return (data ?? []) as PartnerDirectoryRow[];
+}
+
+// 전체 디렉토리의 id → status 맵 (상태 무관).
+// 시트 행에 ID 가 있는데 연동 대상(잠재/협력)에 없을 때,
+// "승격됨(사업)" 인지 "DB 에서 삭제됨(고아 행)" 인지 구분하는 데 쓴다.
+async function readDirectoryIdStatus(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from('partner_directory').select('id, status');
+  if (error) throw new SyncError(describeSupabaseError(error));
+  const map = new Map<string, string>();
+  for (const r of (data ?? []) as { id: string; status: string }[]) map.set(r.id, r.status);
+  return map;
 }
 
 // ---------- 변경 계획 (dry-run / 적용 공용) ----------
@@ -306,11 +320,30 @@ export interface SyncPlan {
     updatedCount: number;
     conflictCount: number;
     needsIdColumn: boolean; // 시트에 ID 열이 없어 추가가 필요한지
+    // ID 가 있지만 연동 대상이 아닌 시트 행 (pull 에서 제외 — 절대 신규 생성하지 않음)
+    promotedCount: number; // 사업 등으로 승격되어 시트 연동이 끝난 행
+    orphanCount: number; // DB 에서 삭제되어 대응 행이 없는 시트 행 (시트에서 수동 정리 필요)
   };
   push: {
     rows: PushPlanRow[];
     updatedCount: number;
   };
+}
+
+// 시트/DB 를 한 번만 읽고 계획·적용에서 공유하기 위한 스냅샷.
+export interface SyncSnapshot {
+  sheet: { header: HeaderLayout; title: string; rows: SheetRow[] };
+  dirRows: PartnerDirectoryRow[];
+  idStatus: Map<string, string>;
+}
+
+async function loadSnapshot(): Promise<SyncSnapshot> {
+  const [sheet, dirRows, idStatus] = await Promise.all([
+    readSheet(),
+    readDirectory(),
+    readDirectoryIdStatus(),
+  ]);
+  return { sheet, dirRows, idStatus };
 }
 
 // 두 값이 "마지막 동기화 이후 바뀌었는가" 판단.
@@ -325,8 +358,11 @@ function dbChangedSinceSync(row: PartnerDirectoryRow): boolean {
 
 // ---------- 계획 산출 ----------
 
-export async function buildPlan(): Promise<SyncPlan> {
-  const [{ header, rows: sheetRows }, dirRows] = await Promise.all([readSheet(), readDirectory()]);
+export async function buildPlan(snapshot?: SyncSnapshot): Promise<SyncPlan> {
+  const snap = snapshot ?? (await loadSnapshot());
+  const { header, rows: sheetRows } = snap.sheet;
+  const dirRows = snap.dirRows;
+  const idStatus = snap.idStatus;
 
   const dirById = new Map<string, PartnerDirectoryRow>();
   for (const d of dirRows) dirById.set(d.id, d);
@@ -338,8 +374,15 @@ export async function buildPlan(): Promise<SyncPlan> {
     if (!dirByNameCountry.has(key)) dirByNameCountry.set(key, d);
   }
 
+  // 시트에 이미 ID 로 박혀 있는 DB id 집합 — ID 없는 행의 name+country 매칭이
+  // 이미 다른 시트 행에 연결된 DB 행을 가로채지 않게 한다.
+  const sheetIdSet = new Set<string>();
+  for (const r of sheetRows) if (r.id) sheetIdSet.add(r.id);
+
   const pullRows: PullPlanRow[] = [];
   const matchedDbIds = new Set<string>();
+  let promotedCount = 0;
+  let orphanCount = 0;
 
   for (const sr of sheetRows) {
     if (sr.empty) continue; // 기관명 없는 행 skip
@@ -351,11 +394,19 @@ export async function buildPlan(): Promise<SyncPlan> {
     if (sr.id && dirById.has(sr.id)) {
       db = dirById.get(sr.id);
       matchedBy = 'id';
-    } else if (!sr.id) {
-      // ID 없는 행 → name+country 매칭 시도
+    } else if (sr.id) {
+      // ID 가 있는데 연동 대상(잠재/협력)에 없음 → 절대 신규 생성하지 않는다.
+      //   - DB 에 존재(사업 등으로 승격) → 시트 연동 종료된 행. pull/push 모두 제외.
+      //   - DB 에 없음(삭제됨) → 고아 행. 재생성(부활) 금지, 카운트만 보고.
+      if (idStatus.has(sr.id)) promotedCount += 1;
+      else orphanCount += 1;
+      continue;
+    } else {
+      // ID 없는 행 → name+country 매칭 시도.
+      // 단, 그 DB 행이 이미 다른 시트 행의 ID 로 연결돼 있으면 매칭하지 않는다(중복 ID 방지).
       const key = `${norm(sr.values.name)}|${norm(sr.values.country)}`;
       const cand = dirByNameCountry.get(key);
-      if (cand && !matchedDbIds.has(cand.id)) {
+      if (cand && !matchedDbIds.has(cand.id) && !sheetIdSet.has(cand.id)) {
         db = cand;
         matchedBy = 'name+country';
       }
@@ -396,6 +447,10 @@ export async function buildPlan(): Promise<SyncPlan> {
       const sheetChanged = snapshot == null || norm(sheetValue) !== norm(base);
       const dbChanged = snapshot != null && norm(dbValue) !== norm(base);
       const isConflict = sheetChanged && dbChanged;
+
+      // DB 만 변경(시트는 baseline 그대로) → pull 이 건드리면 신선한 DB 편집을
+      // 시트의 옛 값으로 되돌리게 된다. 이 필드는 push 계획이 시트로 전파한다.
+      if (dbChanged && !sheetChanged) continue;
 
       // pull = 시트 최신 우선 → 시트값 적용.
       const resolvedValue = sheetValue;
@@ -467,6 +522,8 @@ export async function buildPlan(): Promise<SyncPlan> {
       updatedCount: pullRows.filter((r) => r.action === 'update').length,
       conflictCount: pullRows.filter((r) => r.action === 'conflict').length,
       needsIdColumn: header.idCol == null,
+      promotedCount,
+      orphanCount,
     },
     push: {
       rows: pushRows,
@@ -519,9 +576,12 @@ function guardTripped(plannedChanges: number): ApplyResult {
 //   - synced_at / synced_snapshot 갱신, sheet_row_id 에 동일 id 저장.
 //   - opts.force 가 false(자동 경로)이고 변경 합계가 BULK_LIMIT 초과면 쓰기 없이 중단.
 export async function applyPull(opts: { force?: boolean } = {}): Promise<ApplyResult> {
-  const { header, title, rows: sheetRows } = await readSheet();
-  const dirRows = await readDirectory();
-  const plan = await buildPlan();
+  // 시트/DB 를 한 번만 읽고 계획·적용이 같은 스냅샷을 공유한다
+  // (이중 읽기 제거: Sheets API 호출량 절반 + 계획/적용 시점 불일치 방지).
+  const snapshot = await loadSnapshot();
+  const { header, title, rows: sheetRows } = snapshot.sheet;
+  const dirRows = snapshot.dirRows;
+  const plan = await buildPlan(snapshot);
 
   // ---- 대량변경 가드 (force 아닐 때만) ----
   const plannedChanges = plan.pull.rows.reduce(
@@ -560,6 +620,9 @@ export async function applyPull(opts: { force?: boolean } = {}): Promise<ApplyRe
   const srByRow = new Map<number, (typeof sheetRows)[number]>();
   for (const sr of sheetRows) srByRow.set(sr.rowNumber, sr);
 
+  // 적용 도중 일부 행에서 실패해도, 이미 덮어쓴 필드의 백업과 ID write-back 은
+  // 반드시 기록되도록 try/finally 로 flush 한다 (백업 유실 방지).
+  try {
   for (const pr of plan.pull.rows) {
     const sr = srByRow.get(pr.rowNumber);
     if (!sr) continue;
@@ -692,13 +755,19 @@ export async function applyPull(opts: { force?: boolean } = {}): Promise<ApplyRe
     }
   }
 
-  // write-back: 행/셀 단위 batch (전체 클리어 없음)
-  if (idWriteBack.length > 0) {
-    await batchWriteRanges(idWriteBack);
+  } finally {
+    // write-back: 행/셀 단위 batch (전체 클리어 없음).
+    // 도중 실패 시에도 처리 완료된 행의 매핑은 정착시킨다.
+    if (idWriteBack.length > 0) {
+      try {
+        await batchWriteRanges(idWriteBack);
+      } catch (e) {
+        console.error('[sheet-sync] ID write-back 실패:', e instanceof Error ? e.message : e);
+      }
+    }
+    // 백업 기록 (writeBackups 는 내부에서 오류를 삼킨다 — 원본 예외를 가리지 않음)
+    await writeBackups(backups);
   }
-
-  // 백업 일괄 기록
-  await writeBackups(backups);
 
   return {
     created,

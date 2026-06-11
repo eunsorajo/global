@@ -50,12 +50,15 @@ function addDaysStr(base: string, days: number): string {
 export async function getNotifications(): Promise<NotificationResult> {
   const supabase = getSupabaseAdmin();
   const today = todayStr();
-  const soonLimit = addDaysStr(today, 3); // 오늘 포함 3일 이내
+  const soonLimit = addDaysStr(today, 2); // 오늘 포함 3일 이내 (오늘, +1, +2)
 
-  // 1) 미완료 팔로업 + 회의/파트너 정보 (기한 있는 것만)
+  // 1) 미완료 팔로업 + 회의/파트너 정보 (기한 있는 것만).
+  //    회의 팔로업(meeting_id)과 디렉토리 팔로업(directory_id) 둘 다 포함 — 표시를 분기한다.
   const fuRes = await supabase
     .from('followups')
-    .select('id, content, due_date, status, meeting_id, meetings(id, title, partner_id, partners(id, name))')
+    .select(
+      'id, content, due_date, status, meeting_id, directory_id, meetings(id, title, partner_id, partners(id, name)), partner_directory(id, name, status)',
+    )
     .neq('status', 'completed')
     .not('due_date', 'is', null)
     .order('due_date', { ascending: true });
@@ -74,10 +77,12 @@ export async function getNotifications(): Promise<NotificationResult> {
     content: string;
     due_date: string | null;
     status: string;
-    meeting_id: string;
+    meeting_id: string | null;
+    directory_id: string | null;
     meetings:
       | { id: string; title: string; partner_id: string; partners: { id: string; name: string } | null }
       | null;
+    partner_directory: { id: string; name: string; status: string } | null;
   };
 
   const followups = (fuRes.data ?? []) as unknown as FollowupJoined[];
@@ -88,19 +93,36 @@ export async function getNotifications(): Promise<NotificationResult> {
   for (const f of followups) {
     const due = f.due_date;
     if (!due) continue;
-    const meeting = f.meetings;
-    const partner = meeting?.partners ?? null;
-    const partnerId = partner?.id ?? meeting?.partner_id ?? '';
-    const partnerName = partner?.name ?? '알 수 없는 파트너';
-    const meetingTitle = meeting?.title ?? '제목 없는 회의';
-    const href = partnerId ? `/business-partners/${partnerId}?tab=meetings` : '/business-partners';
+
+    // 출처 분기: 회의 팔로업(사업 파트너) vs 디렉토리 팔로업(협력/잠재 파트너)
+    let partnerId: string;
+    let partnerName: string;
+    let sourceLabel: string;
+    let href: string;
+    if (f.meeting_id && f.meetings) {
+      const meeting = f.meetings;
+      const partner = meeting.partners ?? null;
+      partnerId = partner?.id ?? meeting.partner_id ?? '';
+      partnerName = partner?.name ?? '알 수 없는 파트너';
+      sourceLabel = `"${meeting.title || '제목 없는 회의'}"의 후속 작업`;
+      href = partnerId ? `/business-partners/${partnerId}?tab=meetings` : '/business-partners';
+    } else if (f.directory_id && f.partner_directory) {
+      const dir = f.partner_directory;
+      partnerId = dir.id;
+      partnerName = dir.name;
+      sourceLabel = `${dir.status} 파트너 팔로업`;
+      href = `/partners/${dir.id}`;
+    } else {
+      // 연결 정보가 조회되지 않은 행(삭제 직후 등) — 알림에서 제외.
+      continue;
+    }
 
     if (due < today) {
       overdue.push({
         id: `fu-${f.id}`,
         level: 'overdue',
         title: '팔로업 기한 초과',
-        body: `${partnerName} — "${meetingTitle}"의 후속 작업 "${f.content}"의 기한(${due})이 지났습니다.`,
+        body: `${partnerName} — ${sourceLabel} "${f.content}"의 기한(${due})이 지났습니다.`,
         partnerId,
         partnerName,
         href,
@@ -111,7 +133,7 @@ export async function getNotifications(): Promise<NotificationResult> {
         id: `fu-${f.id}`,
         level: 'due_soon',
         title: '팔로업 기한 임박',
-        body: `${partnerName} — "${meetingTitle}"의 후속 작업 "${f.content}"의 기한이 ${due}로 임박했습니다.`,
+        body: `${partnerName} — ${sourceLabel} "${f.content}"의 기한이 ${due}로 임박했습니다.`,
         partnerId,
         partnerName,
         href,

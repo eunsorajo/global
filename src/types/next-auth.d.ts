@@ -33,5 +33,7 @@ declare module 'next-auth/jwt' {
     registered?: boolean;
     status?: UserStatus;
     isSuperAdmin?: boolean;
+    // RBAC 클레임 마지막 재조회 시각(ms) — 60초 TTL 캐시용
+    claimsCheckedAt?: number;
   }
 }

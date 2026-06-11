@@ -163,20 +163,13 @@ export async function changeDirectoryStatus(
   if (!dirRes.data) throw new DirectoryDataError('해당 파트너사를 찾을 수 없습니다.');
   const before = dirRes.data as PartnerDirectoryRow;
 
-  // status 갱신
-  const { data: updated, error: updErr } = await supabase
-    .from('partner_directory')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('*')
-    .single();
-  if (updErr) throw new DirectoryDataError(describeSupabaseError(updErr));
-  const directory = updated as PartnerDirectoryRow;
-
   let businessPartnerId: string | null = null;
+  let createdPartnerId: string | null = null; // 이번 호출에서 새로 만든 partners 행 (보상 삭제용)
 
   if (status === '사업') {
-    // 이미 연결된 partners 상세가 있는지 확인
+    // partners 상세를 status 변경 *전에* 먼저 보장한다.
+    // (insert 가 실패했을 때 status 만 '사업'으로 남는 모순 상태 —
+    //  사업 목록에 안 보이고 KPI 진입 불가 — 를 만들지 않기 위함)
     const existRes = await supabase
       .from('partners')
       .select('id')
@@ -201,14 +194,15 @@ export async function changeDirectoryStatus(
         .insert({
           directory_id: id,
           no: nextNo,
-          name: directory.name,
-          country: directory.country ?? '',
+          name: before.name,
+          country: before.country ?? '',
           agreement_submitted: false,
         })
         .select('id')
         .single();
       if (insRes.error) throw new DirectoryDataError(describeSupabaseError(insRes.error));
       businessPartnerId = (insRes.data as { id: string }).id;
+      createdPartnerId = businessPartnerId;
     }
   } else {
     // 사업이 아니어도 연결 partners 가 있을 수 있으므로(강등) 조회만.
@@ -222,8 +216,29 @@ export async function changeDirectoryStatus(
     }
   }
 
-  // before 미사용 경고 회피용(현재 추가 로직 없음). 추후 상태전이 검증 시 활용.
-  void before;
+  // status 갱신 (사업 승격의 경우 partners 보장 이후에 수행)
+  const { data: updated, error: updErr } = await supabase
+    .from('partner_directory')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (updErr) {
+    // 보상: 이번에 만든 partners 행이 있으면 제거해 비-사업 디렉토리에
+    // partners 상세가 매달린 상태(사업 목록 오표시)를 남기지 않는다.
+    if (createdPartnerId) {
+      const delRes = await supabase.from('partners').delete().eq('id', createdPartnerId);
+      if (delRes.error) {
+        console.error(
+          '[directory-data] status 갱신 실패 후 partners 보상 삭제도 실패:',
+          describeSupabaseError(delRes.error),
+        );
+      }
+    }
+    throw new DirectoryDataError(describeSupabaseError(updErr));
+  }
+  const directory = updated as PartnerDirectoryRow;
+
   return { directory, businessPartnerId };
 }
 

@@ -27,12 +27,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async jwt({ token, account, user }) {
-      // 최초 로그인 시 이메일 확보
+      // 최초 로그인 시 이메일 확보 + 즉시 클레임 적재
       if (account) {
         token.email = user?.email ?? token.email ?? null;
+        await loadUserClaims(token);
+        return token;
       }
-      // 매 요청마다 users 1행을 가볍게 재조회 → RBAC/가입상태 적재(승인/거부 즉시 반영).
-      await loadUserClaims(token);
+      // users 재조회는 60초 TTL 캐시 — 한 페이지 렌더에서 auth() 가 2~3회 불리고
+      // 60초 폴링까지 더해지면 요청마다 users 쿼리가 중복 실행되므로 묶는다.
+      // (승인/차단 반영이 최대 60초 지연되는 트레이드오프는 수용)
+      const checkedAt = token.claimsCheckedAt ?? 0;
+      if (Date.now() - checkedAt > CLAIMS_TTL_MS) {
+        await loadUserClaims(token);
+      }
       return token;
     },
     async session({ session, token }) {
@@ -49,6 +56,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+// users 재조회 TTL — 이 시간 안에는 토큰의 클레임을 그대로 신뢰한다.
+const CLAIMS_TTL_MS = 60_000;
 
 // users row 를 조회해 토큰에 RBAC/가입상태를 적재한다.
 // row 가 없으면 미등록(registered=false)으로 표시하고 역할 관련 클레임은 비운다.
@@ -72,8 +82,9 @@ async function loadUserClaims(token: JWT): Promise<void> {
       token.status = undefined;
       token.isSuperAdmin = false;
     }
+    token.claimsCheckedAt = Date.now();
   } catch (e) {
     console.error('[auth] user claims load failed:', e instanceof Error ? e.message : e);
-    // 조회 실패 시 기존 토큰 값 유지 (권한 변경 없음)
+    // 조회 실패 시 기존 토큰 값 유지 (권한 변경 없음). TTL 도 갱신하지 않아 다음 요청에서 재시도.
   }
 }

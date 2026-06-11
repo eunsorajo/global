@@ -33,6 +33,8 @@ interface SyncPlan {
     updatedCount: number;
     conflictCount: number;
     needsIdColumn: boolean;
+    promotedCount?: number;
+    orphanCount?: number;
   };
   push: { rows: PushPlanRow[]; updatedCount: number };
 }
@@ -46,6 +48,9 @@ interface ApplyResult {
   created: number;
   updated: number;
   conflicts: ConflictDetail[];
+  backups?: number;
+  needsConfirmation?: boolean;
+  plannedChanges?: number;
 }
 
 const FIELD_LABEL: Record<string, string> = {
@@ -72,25 +77,53 @@ export default function SheetSyncManager() {
   const [plan, setPlan] = useState<SyncPlan | null>(null);
   const [applied, setApplied] = useState<{ mode: string; result: unknown } | null>(null);
 
-  async function call(mode: 'dryrun' | 'pull' | 'push' | 'both') {
+  // 대량변경 가드(needsConfirmation) 추출 — 단일 결과/both(pull·push) 모두 대응.
+  function extractGuard(result: unknown): { needs: boolean; planned: number } {
+    const r = result as
+      | (ApplyResult & { pull?: ApplyResult; push?: ApplyResult | null })
+      | undefined;
+    if (!r) return { needs: false, planned: 0 };
+    if (r.needsConfirmation) return { needs: true, planned: r.plannedChanges ?? 0 };
+    if (r.pull?.needsConfirmation) return { needs: true, planned: r.pull.plannedChanges ?? 0 };
+    if (r.push?.needsConfirmation) return { needs: true, planned: r.push.plannedChanges ?? 0 };
+    return { needs: false, planned: 0 };
+  }
+
+  async function call(mode: 'dryrun' | 'pull' | 'push' | 'both', force = false) {
     setBusy(mode);
     setError(null);
     try {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify(force ? { mode, force: true } : { mode }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? '동기화 요청 실패');
       if (mode === 'dryrun') {
         setPlan(data.plan as SyncPlan);
         setApplied(null);
-      } else {
-        setApplied({ mode, result: data.result });
-        setPlan(null);
-        router.refresh(); // 목록(/) 갱신
+        return;
       }
+      // 대량변경 가드 발동 → 관리자 확인 후 force 재호출 (자동 폴링에는 없는 수동 전용 경로).
+      const guard = extractGuard(data.result);
+      if (guard.needs) {
+        setBusy(null);
+        const ok = window.confirm(
+          `변경 ${guard.planned}건이 대량변경 한도(15건)를 초과해 적용이 보류되었습니다.\n` +
+            `시트가 대규모로 수정된 게 맞다면 [확인]을 눌러 전체 적용하세요.\n` +
+            `(덮어쓰는 이전 값은 백업되어 아래 '백업' 목록에서 되돌릴 수 있습니다)`,
+        );
+        if (ok) {
+          await call(mode, true);
+        } else {
+          setError(`대량 변경 ${guard.planned}건이 보류되었습니다 — 아무것도 적용되지 않았습니다.`);
+        }
+        return;
+      }
+      setApplied({ mode, result: data.result });
+      setPlan(null);
+      router.refresh(); // 목록(/) 갱신
     } catch (e) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다.');
     } finally {
@@ -160,6 +193,22 @@ export default function SheetSyncManager() {
             </div>
           )}
 
+          {((plan.pull.promotedCount ?? 0) > 0 || (plan.pull.orphanCount ?? 0) > 0) && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              연동 제외 시트 행:{' '}
+              {(plan.pull.promotedCount ?? 0) > 0 && (
+                <span>사업 승격 등으로 연동 종료 {plan.pull.promotedCount}건</span>
+              )}
+              {(plan.pull.promotedCount ?? 0) > 0 && (plan.pull.orphanCount ?? 0) > 0 && ' · '}
+              {(plan.pull.orphanCount ?? 0) > 0 && (
+                <span className="text-amber-700">
+                  DB에서 삭제되어 대응 없음 {plan.pull.orphanCount}건 (시트에서 해당 행을 직접
+                  정리해 주세요 — 자동 재생성하지 않습니다)
+                </span>
+              )}
+            </div>
+          )}
+
           {/* PULL 변경 목록 */}
           <section>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">
@@ -199,7 +248,8 @@ export default function SheetSyncManager() {
                           <li key={c.field}>
                             ⚠ {label(c.field)} 충돌 — DB:{' '}
                             <span className="font-medium">{c.dbValue ?? '∅'}</span> / 시트:{' '}
-                            <span className="font-medium">{c.sheetValue ?? '∅'}</span> (건너뜀)
+                            <span className="font-medium">{c.sheetValue ?? '∅'}</span> (시트값
+                            자동 적용 · 이전 값 백업)
                           </li>
                         ))}
                       </ul>
@@ -249,35 +299,41 @@ export default function SheetSyncManager() {
 }
 
 function AppliedResult({ mode, result }: { mode: string; result: unknown }) {
-  // 결과 형태가 mode 마다 달라 안전하게 추출
+  // 결과 형태가 mode 마다 달라 안전하게 추출 (both 의 push 는 가드 보류 시 null 일 수 있음)
   const r = result as
     | ApplyResult
-    | { pull: ApplyResult; push: ApplyResult }
+    | { pull: ApplyResult; push: ApplyResult | null }
     | undefined;
   let created = 0;
   let updated = 0;
   let conflicts: ConflictDetail[] = [];
+  let backups = 0;
   if (r && 'pull' in r) {
-    created = r.pull.created + r.push.created;
-    updated = r.pull.updated + r.push.updated;
-    conflicts = [...r.pull.conflicts, ...r.push.conflicts];
+    created = r.pull.created + (r.push?.created ?? 0);
+    updated = r.pull.updated + (r.push?.updated ?? 0);
+    conflicts = [...r.pull.conflicts, ...(r.push?.conflicts ?? [])];
+    backups = (r.pull.backups ?? 0) + (r.push?.backups ?? 0);
   } else if (r) {
     created = r.created;
     updated = r.updated;
     conflicts = r.conflicts;
+    backups = r.backups ?? 0;
   }
   return (
     <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">
       <p className="font-medium">
-        {mode} 적용 완료 — 생성 {created}건, 수정 {updated}건, 충돌 {conflicts.length}건
+        {mode} 적용 완료 — 생성 {created}건, 수정 {updated}건, 충돌 자동해결 {conflicts.length}건
+        {backups > 0 && <span> · 백업 {backups}건 기록(아래 백업 목록에서 되돌리기 가능)</span>}
       </p>
       {conflicts.length > 0 && (
         <div className="text-red-700">
-          <p className="font-medium">충돌(건너뜀) — sync_log 기록됨:</p>
+          <p className="font-medium">
+            충돌 — 최신 값(시트/DB 중 변경된 쪽)을 자동 적용했고, 이전 값은 백업에 보관됨:
+          </p>
           <ul className="ml-3 list-disc">
             {conflicts.map((c, i) => (
               <li key={i}>
-                {c.name} · {label(c.field)} — DB: {c.dbValue ?? '∅'} / 시트: {c.sheetValue ?? '∅'}
+                {c.name} · {label(c.field)} — 이전: {c.dbValue ?? '∅'} → 적용: {c.sheetValue ?? '∅'}
               </li>
             ))}
           </ul>

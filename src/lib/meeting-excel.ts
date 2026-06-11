@@ -6,6 +6,8 @@ import { normalizeDate } from '@/lib/meeting-parser';
 import type { ParsedMeeting, ParsedFollowup } from '@/types/meeting';
 
 export const MAX_XLSX_BYTES = 5 * 1024 * 1024; // 5MB
+// 조작된 파일이 rowCount 를 과대 선언해도 루프가 폭주하지 않게 스캔 상한을 둔다.
+const MAX_SCAN_ROWS = 2000;
 
 const MEETING_HEADERS = ['파트너명', '회의일', '제목', '참석자', '요약', '핵심사항', '결정사항'] as const;
 const FOLLOWUP_HEADERS = ['내용', '담당자', '기한'] as const;
@@ -16,9 +18,11 @@ function cellText(v: ExcelJS.CellValue): string {
   if (typeof v === 'string') return v.trim();
   if (typeof v === 'number' || typeof v === 'boolean') return String(v).trim();
   if (v instanceof Date) {
-    const y = v.getFullYear();
-    const m = String(v.getMonth() + 1).padStart(2, '0');
-    const d = String(v.getDate()).padStart(2, '0');
+    // exceljs 는 날짜 셀을 UTC 자정 기준 Date 로 파싱한다 — 로컬 getter 를 쓰면
+    // 음수 오프셋 타임존 서버에서 하루 밀리므로 UTC getter 로 읽는다.
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(v.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
   // RichText / Formula 등
@@ -105,7 +109,8 @@ export async function parseUploadedWorkbook(
     return emptyParsed(['엑셀에서 시트를 찾을 수 없습니다.']);
   }
 
-  // 헤더 행(파트너명이 들어있는 행)을 찾고 그 다음 데이터 행을 읽는다.
+  // 헤더 행(파트너명이 들어있는 행)을 찾고, 헤더 텍스트 → 실제 열 번호 맵을 만든다.
+  // 열 번호를 고정(1~7)하지 않아 사용자가 열을 추가/재배열해도 어긋나지 않는다.
   let headerRowNum = 0;
   ws.eachRow((row, rowNum) => {
     if (headerRowNum) return;
@@ -116,9 +121,21 @@ export async function parseUploadedWorkbook(
     return emptyParsed(['회의록 시트에서 헤더(파트너명 ...)를 찾지 못했습니다. 제공된 양식을 사용해주세요.']);
   }
 
-  // 헤더 다음의 첫 비어있지 않은 데이터 행
+  // 헤더 텍스트 → 열 번호 (1-based). 공백 제거 후 비교.
+  const colByHeader = new Map<string, number>();
+  ws.getRow(headerRowNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+    const key = cellText(cell.value).replace(/\s+/g, '');
+    if (key && !colByHeader.has(key)) colByHeader.set(key, colNum);
+  });
+  const missing = MEETING_HEADERS.filter((h) => !colByHeader.has(h.replace(/\s+/g, '')));
+  if (missing.length > 0) {
+    warnings.push(`헤더에서 찾지 못한 열: ${missing.join(', ')} — 해당 항목은 비워집니다.`);
+  }
+
+  // 헤더 다음의 첫 비어있지 않은 데이터 행 (스캔 상한 적용)
   let dataRow: ExcelJS.Row | null = null;
-  for (let r = headerRowNum + 1; r <= ws.rowCount; r++) {
+  const lastScanRow = Math.min(ws.rowCount, headerRowNum + MAX_SCAN_ROWS);
+  for (let r = headerRowNum + 1; r <= lastScanRow; r++) {
     const row = ws.getRow(r);
     const vals = (row.values as ExcelJS.CellValue[]).map(cellText);
     if (vals.some((v) => v)) {
@@ -128,17 +145,19 @@ export async function parseUploadedWorkbook(
   }
   if (!dataRow) return emptyParsed(['회의록 데이터 행이 비어 있습니다.']);
 
-  const get = (col: number) => cellText(dataRow!.getCell(col).value);
-  // 헤더 순서 고정: 1 파트너명 / 2 회의일 / 3 제목 / 4 참석자 / 5 요약 / 6 핵심사항 / 7 결정사항
-  const partnerName = get(1) || null;
-  const meetingDate = normalizeDate(get(2));
-  const title = get(3);
-  const attendees = get(4) || null;
-  const summary = get(5) || null;
-  const keyPoints = splitMultiline(get(6));
-  const decisions = splitMultiline(get(7));
+  const get = (header: (typeof MEETING_HEADERS)[number]) => {
+    const col = colByHeader.get(header.replace(/\s+/g, ''));
+    return col ? cellText(dataRow!.getCell(col).value) : '';
+  };
+  const partnerName = get('파트너명') || null;
+  const meetingDate = normalizeDate(get('회의일'));
+  const title = get('제목');
+  const attendees = get('참석자') || null;
+  const summary = get('요약') || null;
+  const keyPoints = splitMultiline(get('핵심사항'));
+  const decisions = splitMultiline(get('결정사항'));
 
-  // 팔로업 시트
+  // 팔로업 시트 — 동일하게 헤더 텍스트로 열을 찾는다.
   const followups: ParsedFollowup[] = [];
   const fws = wb.getWorksheet('팔로업');
   if (fws) {
@@ -149,14 +168,24 @@ export async function parseUploadedWorkbook(
       if (vals.some((v) => v.replace(/\s+/g, '') === '내용')) fHeaderNum = rowNum;
     });
     if (fHeaderNum) {
-      for (let r = fHeaderNum + 1; r <= fws.rowCount; r++) {
+      const fColByHeader = new Map<string, number>();
+      fws.getRow(fHeaderNum).eachCell({ includeEmpty: false }, (cell, colNum) => {
+        const key = cellText(cell.value).replace(/\s+/g, '');
+        if (key && !fColByHeader.has(key)) fColByHeader.set(key, colNum);
+      });
+      const fGet = (row: ExcelJS.Row, header: (typeof FOLLOWUP_HEADERS)[number]) => {
+        const col = fColByHeader.get(header.replace(/\s+/g, ''));
+        return col ? cellText(row.getCell(col).value) : '';
+      };
+      const fLastScanRow = Math.min(fws.rowCount, fHeaderNum + MAX_SCAN_ROWS);
+      for (let r = fHeaderNum + 1; r <= fLastScanRow; r++) {
         const row = fws.getRow(r);
-        const content = cellText(row.getCell(1).value);
+        const content = fGet(row, '내용');
         if (!content) continue;
         followups.push({
           content,
-          assignee: cellText(row.getCell(2).value) || null,
-          dueDate: normalizeDate(cellText(row.getCell(3).value)),
+          assignee: fGet(row, '담당자') || null,
+          dueDate: normalizeDate(fGet(row, '기한')),
         });
       }
     }
@@ -173,7 +202,7 @@ export async function parseUploadedWorkbook(
   if (!partnerName) warnings.push('파트너명이 비어 있습니다. 직접 선택해주세요.');
   else if (!matchedPartnerId) warnings.push(`"${partnerName}" 파트너를 DB에서 찾지 못했습니다. 직접 선택해주세요.`);
   if (!title) warnings.push('제목이 비어 있습니다. (저장 시 필수)');
-  if (!meetingDate && get(2)) warnings.push('회의일 형식을 인식하지 못했습니다. (YYYY-MM-DD 권장)');
+  if (!meetingDate && get('회의일')) warnings.push('회의일 형식을 인식하지 못했습니다. (YYYY-MM-DD 권장)');
 
   return {
     partnerName,

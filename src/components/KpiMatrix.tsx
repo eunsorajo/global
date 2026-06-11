@@ -253,6 +253,9 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
                     <td key={k.id} className="px-2 py-2 border-l border-gray-100 align-top min-w-[160px]">
                       <input
                         type="text"
+                        // key 에 state 값을 포함해, 저장 실패 롤백 시 입력칸이 state 값으로
+                        // 리마운트되게 한다 (uncontrolled input 의 화면-상태 불일치 방지).
+                        key={`${key}:${cell.value ?? ''}`}
                         defaultValue={cell.value ?? ''}
                         placeholder="진척도 입력"
                         onBlur={(e) => {

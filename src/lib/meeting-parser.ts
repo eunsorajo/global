@@ -65,9 +65,17 @@ export function normalizeDate(raw: string | null | undefined): string | null {
     const [, y, mo, d] = m;
     const mm = mo.padStart(2, '0');
     const dd = d.padStart(2, '0');
+    const yearN = Number(y);
     const monthN = Number(mm);
     const dayN = Number(dd);
-    if (monthN >= 1 && monthN <= 12 && dayN >= 1 && dayN <= 31) {
+    // 실재하는 날짜인지 역검증 (2026-02-31 같은 값이 DB date 캐스팅 단계에서
+    // 터지면 회의록만 저장되고 팔로업이 실패하는 부분 저장이 생긴다).
+    const dt = new Date(Date.UTC(yearN, monthN - 1, dayN));
+    if (
+      dt.getUTCFullYear() === yearN &&
+      dt.getUTCMonth() === monthN - 1 &&
+      dt.getUTCDate() === dayN
+    ) {
       return `${y}-${mm}-${dd}`;
     }
   }

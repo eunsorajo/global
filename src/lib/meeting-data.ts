@@ -113,7 +113,18 @@ export async function saveParsedMeeting(
 
   if (followupRows.length > 0) {
     const fuRes = await supabase.from('followups').insert(followupRows);
-    if (fuRes.error) throw new MeetingDataError(describeSupabaseError(fuRes.error));
+    if (fuRes.error) {
+      // 보상 트랜잭션: 팔로업 저장 실패 시 방금 만든 회의록을 삭제해
+      // "회의록만 저장된 절반 상태"(재시도 시 중복 생성 원인)를 남기지 않는다.
+      const delRes = await supabase.from('meetings').delete().eq('id', meetingId);
+      if (delRes.error) {
+        console.error(
+          '[meeting-data] 팔로업 실패 후 회의록 보상 삭제도 실패:',
+          describeSupabaseError(delRes.error),
+        );
+      }
+      throw new MeetingDataError(describeSupabaseError(fuRes.error));
+    }
   }
 
   return meetingId;

@@ -5,7 +5,9 @@
 // 동작:
 //   - 60초마다 /api/sync (mode:'pull') 를 조용히 호출.
 //   - 변경(created/updated > 0)이 있으면 router.refresh() 로 목록 갱신.
-//   - 충돌은 자동 머지하지 않음(기존 정책) — 서버가 sync_log 에 기록.
+//   - 충돌은 최신 우선 자동 적용 + 이전 값 sync_backup 백업 (008 정책).
+//   - 대량변경 가드(BULK_LIMIT 초과) 발동 시 자동 적용하지 않고
+//     "확인 필요" 배지를 띄워 /admin/sync 수동 확인으로 유도한다.
 // 과다 호출 방지:
 //   - 탭이 백그라운드(document.hidden)면 폴링 일시중지.
 //   - 직전 호출이 진행 중이면 이번 주기는 스킵.
@@ -23,6 +25,8 @@ interface PullResult {
   created: number;
   updated: number;
   conflicts: unknown[];
+  needsConfirmation?: boolean;
+  plannedChanges?: number;
 }
 
 export default function SheetPullPoller() {
@@ -31,6 +35,8 @@ export default function SheetPullPoller() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  // 대량변경 가드 발동(자동 적용 보류) — /admin/sync 에서 확인 필요.
+  const [blockedChanges, setBlockedChanges] = useState<number | null>(null);
 
   // 진행 중 플래그(중복 호출 방지) — 리렌더 영향 없이 즉시 읽기 위해 ref.
   const inFlightRef = useRef(false);
@@ -54,6 +60,8 @@ export default function SheetPullPoller() {
       const r = data.result;
       setLastSyncAt(Date.now());
       setStatus('idle');
+      // 대량변경 가드 발동 → 자동 적용 보류 상태를 사용자에게 표시.
+      setBlockedChanges(r?.needsConfirmation ? (r.plannedChanges ?? 0) : null);
       // 변경이 있으면 서버 컴포넌트 데이터 갱신.
       if (r && (r.created > 0 || r.updated > 0)) {
         router.refresh();
@@ -117,6 +125,14 @@ export default function SheetPullPoller() {
           <span className="text-gray-400">· 꺼짐</span>
         )}
       </span>
+      {blockedChanges != null && (
+        <a
+          href="/admin/sync"
+          className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-700 font-medium hover:bg-amber-100"
+        >
+          ⚠ 대량 변경 {blockedChanges}건 보류 — 동기화 관리에서 확인
+        </a>
+      )}
       <button
         type="button"
         onClick={() => setEnabled((v) => !v)}

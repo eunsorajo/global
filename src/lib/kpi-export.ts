@@ -93,8 +93,13 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
   // KPI 정의가 있는 파트너만 시트 생성
   const kpiPartners = summaries.filter((s) => s.kpiCount > 0);
 
-  for (const s of kpiPartners) {
-    const matrix = await getPartnerMatrix(s.id);
+  // 파트너별 매트릭스를 병렬 조회 — 순차 await(N+1) 시 13개 파트너 × 4쿼리가
+  // 직렬로 쌓여 Vercel Hobby 함수 시간(기본 10초)을 위협한다.
+  const matrices = await Promise.all(kpiPartners.map((s) => getPartnerMatrix(s.id)));
+
+  for (let pi = 0; pi < kpiPartners.length; pi += 1) {
+    const s = kpiPartners[pi];
+    const matrix = matrices[pi];
     if (!matrix) continue;
     const { companies, kpiDefinitions, progress } = matrix;
 

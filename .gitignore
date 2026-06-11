@@ -43,3 +43,7 @@ next-env.d.ts
 # temp files
 *.tmp
 *.tmp.*
+
+# 로컬 세션 로그 / 브라우저 검증 산출물 (커밋 금지)
+/reports/
+/.playwright-mcp/

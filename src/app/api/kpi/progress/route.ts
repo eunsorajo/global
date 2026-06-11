@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
 import { requireActiveUser, assertPartnerAccess, errorResponse } from '@/lib/rbac';
-import { getCompanyPartnerId } from '@/lib/kpi-data';
+import { getCompanyPartnerId, getKpiDefinitionPartnerId } from '@/lib/kpi-data';
 
 // 매트릭스 셀(기업 × KPI) 진척도 저장 (upsert).
 // 낙관적 업데이트의 서버 반영 엔드포인트.
@@ -38,10 +38,20 @@ export async function POST(req: NextRequest) {
   }
 
   // 권한: 대상 기업의 실제 partner_id 를 DB 에서 확인 (클라이언트 파라미터 불신).
+  // KPI 정의도 같은 파트너 소속인지 확인해 cross-partner 진척도 오염을 차단한다.
   try {
-    const partnerId = await getCompanyPartnerId(body.companyId);
+    const [partnerId, defPartnerId] = await Promise.all([
+      getCompanyPartnerId(body.companyId),
+      getKpiDefinitionPartnerId(body.kpiDefinitionId),
+    ]);
     if (!partnerId) {
       return NextResponse.json({ error: '해당 기업을 찾을 수 없습니다.' }, { status: 404 });
+    }
+    if (!defPartnerId) {
+      return NextResponse.json({ error: '해당 KPI 정의를 찾을 수 없습니다.' }, { status: 404 });
+    }
+    if (defPartnerId !== partnerId) {
+      return NextResponse.json({ error: 'KPI 정의가 해당 기업의 파트너에 속하지 않습니다.' }, { status: 400 });
     }
     assertPartnerAccess(session, partnerId);
   } catch (e) {
