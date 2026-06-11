@@ -1002,6 +1002,59 @@ export async function syncRowToSheet(id: string): Promise<RowSyncResult> {
   return appendRow(id);
 }
 
+// ---------- 되돌리기(rollback) ----------
+
+export interface RollbackResult {
+  ok: boolean;
+  reason: string;
+  sheetSynced?: boolean;
+}
+
+// sync_backup 한 건을 되돌린다: DB 필드를 old_value 로 복원 → 시트에도 반영 → restored=true.
+// 자동 동기화가 덮어쓴 값을 관리자가 한 번에 복구할 수 있게 한다.
+export async function rollbackBackup(backupId: string): Promise<RollbackResult> {
+  const supabase = getSupabaseAdmin();
+  const { data: backup, error } = await supabase
+    .from('sync_backup')
+    .select('*')
+    .eq('id', backupId)
+    .maybeSingle();
+  if (error) throw new SyncError(describeSupabaseError(error));
+  if (!backup) return { ok: false, reason: 'not-found' };
+  if (backup.restored) return { ok: false, reason: 'already-restored' };
+  if (backup.entity !== 'partner_directory' || !backup.directory_id) {
+    return { ok: false, reason: 'unsupported-entity' };
+  }
+  if (!SYNC_FIELDS.includes(backup.field as DirectoryField)) {
+    return { ok: false, reason: 'invalid-field' };
+  }
+
+  // 1) DB 필드를 이전 값으로 복원
+  const { error: upErr } = await supabase
+    .from('partner_directory')
+    .update({ [backup.field]: backup.old_value, updated_at: new Date().toISOString() })
+    .eq('id', backup.directory_id);
+  if (upErr) throw new SyncError(describeSupabaseError(upErr));
+
+  // 2) 시트에도 반영 (best-effort — 실패해도 DB 복원은 유지)
+  let sheetSynced = false;
+  try {
+    const res = await pushRow(backup.directory_id);
+    sheetSynced = res.didWrite;
+  } catch (e) {
+    console.error('[sheet-sync] rollback push 실패:', e instanceof Error ? e.message : e);
+  }
+
+  // 3) 백업을 복원됨으로 표시
+  const { error: markErr } = await supabase
+    .from('sync_backup')
+    .update({ restored: true })
+    .eq('id', backupId);
+  if (markErr) console.error('[sheet-sync] rollback restored 표시 실패:', describeSupabaseError(markErr));
+
+  return { ok: true, reason: 'restored', sheetSynced };
+}
+
 // ---------- sync_log 기록 ----------
 
 export async function writeSyncLog(params: {
