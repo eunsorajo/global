@@ -3,30 +3,19 @@ import type { PartnerMatrix } from '@/types/accelerating';
 
 // 매트릭스로부터 달성 현황을 집계한다.
 // (lib/kpi-data.getPartnerSummaries 와 동일한 규칙:
-//  KPI 정의별로 진척도 셀이 있으면 셀 단위, 없으면 파트너 레벨 achieved 1단위)
+//  분모 = 기업수 × KPI수, 분자 = "✓ 달성"으로 찍힌 셀 수. 미입력 칸은 미달성(0).
+//  파트너 레벨 달성 플래그는 달성률 계산에서 제외 — 매트릭스 표시 전용.)
 function summarize(matrix: PartnerMatrix): { total: number; achieved: number; rate: number | null } {
   const { kpiDefinitions, companies, progress } = matrix;
-  let total = 0;
+  const total = kpiDefinitions.length * companies.length;
   let achieved = 0;
   for (const def of kpiDefinitions) {
-    let cellTotal = 0;
-    let cellAchieved = 0;
     for (const company of companies) {
       const cell = progress[`${company.id}:${def.id}`];
-      if (cell) {
-        cellTotal += 1;
-        if (cell.achieved === true) cellAchieved += 1;
-      }
-    }
-    if (cellTotal > 0) {
-      total += cellTotal;
-      achieved += cellAchieved;
-    } else {
-      total += 1;
-      if (def.achieved === true) achieved += 1;
+      if (cell && cell.achieved === true) achieved += 1;
     }
   }
-  const rate = kpiDefinitions.length > 0 && total > 0 ? Math.round((achieved / total) * 100) : kpiDefinitions.length > 0 ? 0 : null;
+  const rate = total > 0 ? Math.round((achieved / total) * 100) : null;
   return { total, achieved, rate };
 }
 

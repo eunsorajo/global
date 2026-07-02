@@ -28,8 +28,8 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
   const [partnersRes, companiesRes, defsRes, progressRes] = await Promise.all([
     supabase.from('partners').select('*').order('no', { ascending: true }),
     supabase.from('companies').select('id, partner_id'),
-    supabase.from('kpi_definitions').select('id, partner_id, achieved'),
-    supabase.from('kpi_progress').select('kpi_definition_id, achieved'),
+    supabase.from('kpi_definitions').select('id, partner_id'),
+    supabase.from('kpi_progress').select('kpi_definition_id, company_id, achieved'),
   ]);
 
   for (const r of [partnersRes, companiesRes, defsRes, progressRes]) {
@@ -38,58 +38,54 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
 
   const partners = (partnersRes.data ?? []) as PartnerRow[];
   const companies = (companiesRes.data ?? []) as { id: string; partner_id: string }[];
-  const defs = (defsRes.data ?? []) as { id: string; partner_id: string; achieved: boolean | null }[];
-  const progress = (progressRes.data ?? []) as { kpi_definition_id: string; achieved: boolean | null }[];
+  const defs = (defsRes.data ?? []) as { id: string; partner_id: string }[];
+  const progress = (progressRes.data ?? []) as { kpi_definition_id: string; company_id: string; achieved: boolean | null }[];
 
   // 인덱스 구성
-  const companyCountByPartner = new Map<string, number>();
+  // 파트너별 기업 집합 (존재하는 기업만 — 분모 = 기업수 × KPI수, 고아 진척도 행 방어용)
+  const companyIdsByPartner = new Map<string, Set<string>>();
   for (const c of companies) {
-    companyCountByPartner.set(c.partner_id, (companyCountByPartner.get(c.partner_id) ?? 0) + 1);
+    let set = companyIdsByPartner.get(c.partner_id);
+    if (!set) {
+      set = new Set<string>();
+      companyIdsByPartner.set(c.partner_id, set);
+    }
+    set.add(c.id);
   }
 
-  const defsByPartner = new Map<string, { id: string; achieved: boolean | null }[]>();
+  // 파트너별 KPI 정의 수 + 정의 → 파트너 매핑
+  const kpiCountByPartner = new Map<string, number>();
+  const defToPartner = new Map<string, string>();
   for (const d of defs) {
-    const arr = defsByPartner.get(d.partner_id) ?? [];
-    arr.push({ id: d.id, achieved: d.achieved });
-    defsByPartner.set(d.partner_id, arr);
+    kpiCountByPartner.set(d.partner_id, (kpiCountByPartner.get(d.partner_id) ?? 0) + 1);
+    defToPartner.set(d.id, d.partner_id);
   }
 
-  // KPI 정의별 진척도 셀 집계
-  const progressByDef = new Map<string, { total: number; achieved: number }>();
+  // 파트너별 "✓ 달성" 셀 수 (셀 단위 집계).
+  // 존재하는 기업의 셀만 카운트 → 삭제된 기업의 고아 진척도 행이 100%를 넘기는 것 방지.
+  const achievedCellsByPartner = new Map<string, number>();
   for (const p of progress) {
-    const agg = progressByDef.get(p.kpi_definition_id) ?? { total: 0, achieved: 0 };
-    agg.total += 1;
-    if (p.achieved === true) agg.achieved += 1;
-    progressByDef.set(p.kpi_definition_id, agg);
+    if (p.achieved !== true) continue;
+    const partnerId = defToPartner.get(p.kpi_definition_id);
+    if (!partnerId) continue;
+    const companySet = companyIdsByPartner.get(partnerId);
+    if (!companySet || !companySet.has(p.company_id)) continue;
+    achievedCellsByPartner.set(partnerId, (achievedCellsByPartner.get(partnerId) ?? 0) + 1);
   }
 
   return partners.map((partner) => {
-    const partnerDefs = defsByPartner.get(partner.id) ?? [];
-    const companyCount = companyCountByPartner.get(partner.id) ?? 0;
-    const kpiCount = partnerDefs.length;
+    const companyCount = companyIdsByPartner.get(partner.id)?.size ?? 0;
+    const kpiCount = kpiCountByPartner.get(partner.id) ?? 0;
 
-    // 달성률 계산:
-    //   각 KPI 정의에 대해, 진척도 셀이 있으면 셀 단위(달성/전체)로,
-    //   셀이 없으면 파트너 레벨 achieved(true=달성) 1단위로 집계.
-    let totalUnits = 0;
-    let achievedUnits = 0;
-    for (const d of partnerDefs) {
-      const cellAgg = progressByDef.get(d.id);
-      if (cellAgg && cellAgg.total > 0) {
-        totalUnits += cellAgg.total;
-        achievedUnits += cellAgg.achieved;
-      } else {
-        // 파트너 레벨 KPI (셀 없음): 판정된 경우에만 카운트
-        totalUnits += 1;
-        if (d.achieved === true) achievedUnits += 1;
-      }
-    }
-
-    const achievementRate = kpiCount > 0 && totalUnits > 0
+    // 달성률 = ✓달성 셀 수 / (기업수 × KPI수).
+    //   모든 (기업 × KPI) 칸을 1단위로 보고, "✓ 달성"으로 찍힌 칸만 분자로 센다.
+    //   미입력·미정·미달성 칸은 전부 미달성(0)으로 간주.
+    //   파트너 레벨 달성 플래그(kpi_definitions.achieved)는 달성률 계산에서 제외 — 매트릭스 표시 전용.
+    const totalUnits = companyCount * kpiCount;
+    const achievedUnits = achievedCellsByPartner.get(partner.id) ?? 0;
+    const achievementRate = totalUnits > 0
       ? Math.round((achievedUnits / totalUnits) * 100)
-      : kpiCount > 0
-        ? 0
-        : null;
+      : null;
 
     return {
       id: partner.id,
