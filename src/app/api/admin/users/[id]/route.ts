@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
 import { requireSuperAdmin, errorResponse } from '@/lib/rbac';
 import { countAdmins, countActiveSuperAdmins, UserDataError } from '@/lib/user-data';
+import { hashPassword, isValidPassword, MIN_PASSWORD_LENGTH } from '@/lib/password';
 
 interface TargetUser {
   id: string;
@@ -47,11 +48,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     name?: string | null;
     status?: string;
     isSuperAdmin?: boolean;
+    password?: string;
   };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 });
+  }
+
+  // 비밀번호 재설정(선택): 값이 오면 최소 길이 검증.
+  if (body.password !== undefined && !isValidPassword(body.password)) {
+    return NextResponse.json({ error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` }, { status: 400 });
   }
 
   let target;
@@ -123,13 +130,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if ('name' in body) update.name = body.name?.trim() || null;
   if (body.status !== undefined) update.status = body.status;
   if (body.isSuperAdmin !== undefined) update.is_super_admin = body.isSuperAdmin;
+  if (body.password !== undefined) update.password_hash = await hashPassword(body.password);
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from('users')
     .update(update)
     .eq('id', id)
-    .select('*')
+    .select('id, email, name, role, partner_id, status, is_super_admin, created_at, updated_at')
     .single();
 
   if (error) return NextResponse.json({ error: describeSupabaseError(error) }, { status: 500 });

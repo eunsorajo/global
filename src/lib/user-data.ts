@@ -2,6 +2,7 @@
 // RBAC: 로그인 허용 여부 + 역할/파트너 매핑의 단일 소스.
 import 'server-only';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
+import { hashPassword, verifyPassword } from '@/lib/password';
 import type { UserRole, UserStatus } from '@/types/next-auth';
 
 export class UserDataError extends Error {}
@@ -14,6 +15,8 @@ export interface UserRow {
   partner_id: string | null;
   status: UserStatus;
   is_super_admin: boolean;
+  // 비밀번호 로그인용 bcrypt 해시 (서버 전용 — 클라이언트로 내보내지 않는다). null = 미설정.
+  password_hash?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +40,26 @@ export async function getUserByEmail(email: string | null | undefined): Promise<
     throw new UserDataError(describeSupabaseError(error));
   }
   return (data as UserRow | null) ?? null;
+}
+
+// 비밀번호 로그인 검증: 이메일로 조회 후 bcrypt 비교. 일치하면 UserRow 반환.
+// (권한/상태 판정은 호출부 auth.ts 의 authorize 에서 status='active' 로 재확인)
+export async function verifyUserPassword(email: string, plain: string): Promise<UserRow | null> {
+  const user = await getUserByEmail(email);
+  if (!user) return null;
+  const ok = await verifyPassword(plain, user.password_hash ?? null);
+  return ok ? user : null;
+}
+
+// 사용자 비밀번호 설정/재설정 (해시 저장). 관리자 전용 경로에서만 호출.
+export async function setUserPassword(userId: string, plain: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const password_hash = await hashPassword(plain);
+  const { error } = await supabase
+    .from('users')
+    .update({ password_hash, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw new UserDataError(describeSupabaseError(error));
 }
 
 // 사용자 목록 (관리자 화면용) — 매핑된 파트너명 포함

@@ -1,10 +1,10 @@
 import { signIn } from '@/auth';
-import MagicLinkForm from '@/components/MagicLinkForm';
+import PasswordLoginForm from '@/components/PasswordLoginForm';
 
 // 미로그인 사용자에게 데이터 대신 노출하는 로그인 안내 화면.
 // (데이터 조회는 이 컴포넌트를 거치지 않고 인증 이후에만 일어나야 함)
 // - SBA 담당자(관리자): Google 로그인
-// - 파트너 담당자: 등록된 회사 이메일로 매직링크 로그인 (Google 계정 불필요)
+// - 파트너 담당자: 발급받은 회사 이메일 + 비밀번호 로그인 (Google 계정 불필요)
 export default function LoginNotice({ title = '로그인이 필요합니다' }: { title?: string }) {
   return (
     <main className="max-w-md mx-auto px-6 py-20 text-center">
@@ -34,7 +34,7 @@ export default function LoginNotice({ title = '로그인이 필요합니다' }: 
           <span className="h-px flex-1 bg-gray-200" />
         </div>
 
-        <MagicLinkForm />
+        <PasswordLoginForm />
       </div>
     </main>
   );

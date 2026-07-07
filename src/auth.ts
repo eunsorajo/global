@@ -2,8 +2,7 @@ import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import Credentials from 'next-auth/providers/credentials';
 import type { JWT } from 'next-auth/jwt';
-import { getUserByEmail } from '@/lib/user-data';
-import { consumeLoginToken } from '@/lib/magic-link';
+import { getUserByEmail, verifyUserPassword } from '@/lib/user-data';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
@@ -19,21 +18,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         },
       },
     }),
-    // 파트너용 매직링크 로그인. Google 계정이 없는 파트너 담당자가
-    // 회사 이메일로 받은 1회용 링크로 로그인한다(/auth/verify → signIn('magic-token')).
-    // authorize 에서 토큰을 원자적으로 소비·검증하므로, 이 provider 를 직접 호출해도
-    // 유효한 토큰 없이는 통과하지 못한다. 권한은 users 행(active)에서만 부여.
+    // 파트너용 비밀번호 로그인. Google 계정이 없는 파트너 담당자가
+    // 관리자가 발급한 회사 이메일 + 비밀번호로 로그인한다.
+    // 비밀번호는 bcrypt 해시로만 저장되며, active 상태 사용자에게만 로그인을 허용한다.
     Credentials({
-      id: 'magic-token',
-      name: 'Magic Link',
-      credentials: { email: {}, token: {} },
+      id: 'password',
+      name: 'Email & Password',
+      credentials: { email: {}, password: {} },
       async authorize(creds) {
         const email = String(creds?.email ?? '').trim().toLowerCase();
-        const token = String(creds?.token ?? '');
-        if (!email || !token) return null;
-        const consumed = await consumeLoginToken(email, token);
-        if (!consumed) return null;
-        const user = await getUserByEmail(email);
+        const password = String(creds?.password ?? '');
+        if (!email || !password) return null;
+        const user = await verifyUserPassword(email, password);
         if (!user || user.status !== 'active') return null;
         return { id: user.id, email: user.email, name: user.name ?? undefined };
       },

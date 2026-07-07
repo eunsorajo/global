@@ -26,11 +26,12 @@ export default function AdminUsersManager({
   const [busy, setBusy] = useState(false);
 
   // 추가 폼 상태
-  const [form, setForm] = useState<{ email: string; name: string; role: UserRole; partnerId: string }>({
+  const [form, setForm] = useState<{ email: string; name: string; role: UserRole; partnerId: string; password: string }>({
     email: '',
     name: '',
     role: 'partner',
     partnerId: '',
+    password: '',
   });
 
   // 승인 시 역할·소속 확정용 임시 상태 (pending row id → 선택값)
@@ -70,6 +71,10 @@ export default function AdminUsersManager({
       setError('파트너 역할은 파트너를 선택해야 합니다.');
       return;
     }
+    if (form.role === 'partner' && form.password.length < 8) {
+      setError('파트너 계정은 8자 이상의 비밀번호가 필요합니다.');
+      return;
+    }
     setBusy(true);
     try {
       await call('/api/admin/users', 'POST', {
@@ -77,10 +82,30 @@ export default function AdminUsersManager({
         name: form.name.trim() || null,
         role: form.role,
         partnerId: form.role === 'partner' ? form.partnerId : null,
+        password: form.role === 'partner' ? form.password : undefined,
       });
-      setForm({ email: '', name: '', role: 'partner', partnerId: '' });
+      setForm({ email: '', name: '', role: 'partner', partnerId: '', password: '' });
       router.refresh();
       await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 파트너 비밀번호 재설정 (관리자 → 새 비밀번호 지정)
+  async function resetPassword(u: UserWithPartner) {
+    const pw = window.prompt(`'${u.email}' 의 새 비밀번호를 입력하세요 (8자 이상).\n지정 후 파트너에게 직접 전달하세요.`);
+    if (pw === null) return; // 취소
+    if (pw.length < 8) {
+      setError('비밀번호는 8자 이상이어야 합니다.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await call(`/api/admin/users/${u.id}`, 'PATCH', { password: pw });
+      window.alert('비밀번호가 변경되었습니다. 파트너에게 전달해주세요.');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -318,6 +343,18 @@ export default function AdminUsersManager({
               </select>
             </div>
           )}
+          {form.role === 'partner' && (
+            <div className="min-w-[160px]">
+              <label className="block text-xs text-gray-400 mb-0.5">비밀번호 * (8자 이상)</label>
+              <input
+                type="text"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="파트너에게 전달할 비밀번호"
+                className={`${input} w-full`}
+              />
+            </div>
+          )}
           <button
             onClick={addUser}
             disabled={busy}
@@ -326,6 +363,11 @@ export default function AdminUsersManager({
             + 추가
           </button>
         </div>
+        {form.role === 'partner' && (
+          <p className="text-xs text-gray-400 mt-3">
+            파트너 담당자는 이 <b>이메일 + 비밀번호</b>로 로그인합니다. 비밀번호를 정해 파트너에게 직접(전화·메신저 등) 전달하세요. Google 계정은 필요 없습니다.
+          </p>
+        )}
       </section>
 
       {/* 활성 사용자 목록 */}
@@ -403,7 +445,17 @@ export default function AdminUsersManager({
                       {u.is_super_admin ? '최고관리자' : '일반'}
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {u.role === 'partner' && (
+                      <button
+                        onClick={() => resetPassword(u)}
+                        disabled={busy}
+                        className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 mr-3"
+                        title="파트너 로그인 비밀번호 재설정"
+                      >
+                        비밀번호
+                      </button>
+                    )}
                     {!isSelf && (
                       <button
                         onClick={() => deleteUser(u)}
