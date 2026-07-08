@@ -73,6 +73,8 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
 
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  // 비고(정성 메모) 편집 중인 셀 키 (null = 없음)
+  const [noteOpen, setNoteOpen] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -269,6 +271,39 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
                         onClick={() => saveCell(company.id, k.id, { achieved: nextAchieved(cell.achieved) })}
                         saving={saving}
                       />
+                      {/* 비고 (정성 메모) — 클릭하면 열리고, 포커스를 벗어나면 자동 저장 */}
+                      <div className="mt-1">
+                        {noteOpen === key ? (
+                          <textarea
+                            autoFocus
+                            defaultValue={cell.note ?? ''}
+                            placeholder="비고 (정성 메모)"
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() === '' ? null : e.target.value;
+                              if (v !== (cell.note ?? null)) saveCell(company.id, k.id, { note: v });
+                              setNoteOpen(null);
+                            }}
+                            className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 resize-y min-h-[46px] focus:outline-none focus:border-blue-400"
+                          />
+                        ) : cell.note ? (
+                          <button
+                            type="button"
+                            onClick={() => setNoteOpen(key)}
+                            title="비고 수정"
+                            className="text-left w-full text-[11px] text-gray-500 hover:text-blue-600 whitespace-pre-wrap break-words leading-snug"
+                          >
+                            <span className="text-gray-400">비고 </span>{cell.note}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setNoteOpen(key)}
+                            className="text-[11px] text-gray-300 hover:text-blue-500"
+                          >
+                            ＋ 비고
+                          </button>
+                        )}
+                      </div>
                     </td>
                   );
                 })}

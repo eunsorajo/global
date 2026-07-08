@@ -126,13 +126,17 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
           const cell = progress[`${company.id}:${def.id}`];
           const value = cell?.value?.trim() ?? '';
           const achieved = cell?.achieved;
+          const note = cell?.note?.trim() ?? '';
           const mark = achieved === true ? ' ○' : achieved === false ? ' ×' : '';
-          rowCells.push(value ? `${value}${mark}` : mark.trim() || '-');
+          let text = value ? `${value}${mark}` : (mark.trim() || '-');
+          if (note) text += `\n[비고] ${note}`; // 정성 메모를 같은 칸 아래줄에 표기
+          rowCells.push(text);
 
           totalByDef.set(def.id, (totalByDef.get(def.id) ?? 0) + 1);
           if (achieved === true) achievedByDef.set(def.id, (achievedByDef.get(def.id) ?? 0) + 1);
         }
-        ws.addRow(rowCells);
+        const dataRow = ws.addRow(rowCells);
+        dataRow.alignment = { vertical: 'top', wrapText: true }; // 비고 줄바꿈 표시
       }
     } else {
       // 참여기업이 없으면 파트너 레벨 KPI 달성여부만 표시
