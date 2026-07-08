@@ -3,10 +3,10 @@ import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
 import { requireActiveUser, assertPartnerAccess, HttpError, errorResponse } from '@/lib/rbac';
 import { getPartnerAgreement } from '@/lib/kpi-data';
 
-// 공통 KPI 4종 템플릿 1클릭 채우기.
+// 공통 KPI 3종 템플릿 1클릭 채우기.
 // 협약서 미제출(KPI 미정의) 파트너 온보딩용.
+// (참가기업 수는 성과지표가 아니라 제외 — 참여기업 수는 파트너 상세/대시보드에 별도 표시)
 const COMMON_KPI_TEMPLATE = [
-  { name: '참가기업 수', target: '목표 개사 수 입력' },
   { name: '사전 컨설팅', target: '기업별 2회 이상' },
   { name: '비즈니스 매칭', target: '기업별 3건 이상' },
   { name: '사후 관리', target: '종료 후 3개월 이상 1:1' },
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ partnerId:
   }));
 
   if (rows.length === 0) {
-    return NextResponse.json({ inserted: 0, message: '이미 공통 KPI 4종이 모두 존재합니다.' });
+    return NextResponse.json({ inserted: 0, message: '이미 공통 KPI 3종이 모두 존재합니다.' });
   }
 
   const { data, error } = await supabase.from('kpi_definitions').insert(rows).select('*');

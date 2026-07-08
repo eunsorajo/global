@@ -222,14 +222,14 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
               disabled={busy}
               className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 shrink-0 whitespace-nowrap"
             >
-              공통 KPI 4종 템플릿 채우기
+              공통 KPI 3종 템플릿 채우기
             </button>
           )}
         </div>
 
         {defs.length === 0 ? (
           <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4">
-            아직 정의된 KPI 가 없습니다. 위 템플릿 버튼으로 공통 KPI 4종(참가기업 수/사전 컨설팅/비즈니스 매칭/사후 관리)을 한 번에 채우거나, 아래에서 직접 추가하세요.
+            아직 정의된 KPI 가 없습니다. 위 템플릿 버튼으로 공통 KPI 3종(사전 컨설팅/비즈니스 매칭/사후 관리)을 한 번에 채우거나, 아래에서 직접 추가하세요.
           </p>
         ) : (
           <div className="overflow-x-auto mb-4">
