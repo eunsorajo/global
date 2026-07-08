@@ -112,6 +112,7 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
       const target = def.target ? ` (목표: ${def.target})` : '';
       headerCells.push(`${def.name}${target}`);
     }
+    headerCells.push('비고'); // 참여기업별 정성 메모
     const headerRow = ws.addRow(headerCells);
     styleHeaderRow(headerRow);
 
@@ -126,15 +127,13 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
           const cell = progress[`${company.id}:${def.id}`];
           const value = cell?.value?.trim() ?? '';
           const achieved = cell?.achieved;
-          const note = cell?.note?.trim() ?? '';
           const mark = achieved === true ? ' ○' : achieved === false ? ' ×' : '';
-          let text = value ? `${value}${mark}` : (mark.trim() || '-');
-          if (note) text += `\n[비고] ${note}`; // 정성 메모를 같은 칸 아래줄에 표기
-          rowCells.push(text);
+          rowCells.push(value ? `${value}${mark}` : mark.trim() || '-');
 
           totalByDef.set(def.id, (totalByDef.get(def.id) ?? 0) + 1);
           if (achieved === true) achievedByDef.set(def.id, (achievedByDef.get(def.id) ?? 0) + 1);
         }
+        rowCells.push(company.note?.trim() || ''); // 참여기업별 비고
         const dataRow = ws.addRow(rowCells);
         dataRow.alignment = { vertical: 'top', wrapText: true }; // 비고 줄바꿈 표시
       }
@@ -169,6 +168,7 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
     for (let c = 2; c <= kpiDefinitions.length + 1; c++) {
       ws.getColumn(c).width = 22;
     }
+    ws.getColumn(kpiDefinitions.length + 2).width = 40; // 비고 열
     ws.getColumn(1).alignment = { vertical: 'middle' };
     ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }];
   }

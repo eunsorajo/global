@@ -22,6 +22,7 @@ export interface CompanyRow {
   name: string;
   sector: string | null;
   description: string | null;
+  note: string | null; // 기업별 비고 (정성 메모)
   created_at: string;
   updated_at: string;
 }

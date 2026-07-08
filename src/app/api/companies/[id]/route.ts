@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
 
-  let body: { name?: string; sector?: string | null; description?: string | null };
+  let body: { name?: string; sector?: string | null; description?: string | null; note?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -40,6 +40,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if ('name' in body) update.name = body.name!.trim();
   if ('sector' in body) update.sector = body.sector ?? null;
   if ('description' in body) update.description = body.description ?? null;
+  if ('note' in body) update.note = body.note?.trim() ? body.note.trim() : null; // 기업별 비고(정성 메모)
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

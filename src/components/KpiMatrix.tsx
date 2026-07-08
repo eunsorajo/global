@@ -73,8 +73,11 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
 
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
-  // 비고(정성 메모) 편집 중인 셀 키 (null = 없음)
-  const [noteOpen, setNoteOpen] = useState<string | null>(null);
+  // 기업별 비고(정성 메모) — 기업 행마다 1칸. KPI 칸별이 아니라 기업 단위.
+  const [companyNotes, setCompanyNotes] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(companies.map((c) => [c.id, c.note]))
+  );
+  const [noteEditing, setNoteEditing] = useState<string | null>(null); // 편집 중인 기업 id
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -133,6 +136,34 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
       }
     },
     [cells, showToast]
+  );
+
+  // 기업 비고 저장 (낙관적 → 실패 시 롤백). PATCH /api/companies/[id]
+  const saveCompanyNote = useCallback(
+    async (companyId: string, note: string | null) => {
+      const prev = companyNotes[companyId] ?? null;
+      if (note === prev) return;
+      const savingKey = `note:${companyId}`;
+      setCompanyNotes((m) => ({ ...m, [companyId]: note }));
+      markSaving(savingKey, true);
+      try {
+        const res = await fetch(`/api/companies/${companyId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? '저장 실패');
+        }
+      } catch (e) {
+        setCompanyNotes((m) => ({ ...m, [companyId]: prev })); // 롤백
+        showToast(`비고 저장 실패: ${(e as Error).message}`);
+      } finally {
+        markSaving(savingKey, false);
+      }
+    },
+    [companyNotes, showToast]
   );
 
   // 파트너 레벨 KPI achieved 저장
@@ -228,6 +259,10 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
                   </th>
                 );
               })}
+              <th className="text-left px-3 py-2 font-medium text-gray-700 text-xs border-b border-l border-gray-200 align-top min-w-[200px]">
+                비고
+                <div className="mt-1 text-[11px] text-gray-400 font-normal">참여기업별 정성 메모</div>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -271,42 +306,42 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
                         onClick={() => saveCell(company.id, k.id, { achieved: nextAchieved(cell.achieved) })}
                         saving={saving}
                       />
-                      {/* 비고 (정성 메모) — 클릭하면 열리고, 포커스를 벗어나면 자동 저장 */}
-                      <div className="mt-1">
-                        {noteOpen === key ? (
-                          <textarea
-                            autoFocus
-                            defaultValue={cell.note ?? ''}
-                            placeholder="비고 (정성 메모)"
-                            onBlur={(e) => {
-                              const v = e.target.value.trim() === '' ? null : e.target.value;
-                              if (v !== (cell.note ?? null)) saveCell(company.id, k.id, { note: v });
-                              setNoteOpen(null);
-                            }}
-                            className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 resize-y min-h-[46px] focus:outline-none focus:border-blue-400"
-                          />
-                        ) : cell.note ? (
-                          <button
-                            type="button"
-                            onClick={() => setNoteOpen(key)}
-                            title="비고 수정"
-                            className="text-left w-full text-[11px] text-gray-500 hover:text-blue-600 whitespace-pre-wrap break-words leading-snug"
-                          >
-                            <span className="text-gray-400">비고 </span>{cell.note}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setNoteOpen(key)}
-                            className="text-[11px] text-gray-300 hover:text-blue-500"
-                          >
-                            ＋ 비고
-                          </button>
-                        )}
-                      </div>
                     </td>
                   );
                 })}
+                {/* 기업별 비고 (정성 메모) — 행마다 1칸 */}
+                <td className="px-2 py-2 border-l border-gray-100 align-top min-w-[200px]">
+                  {noteEditing === company.id ? (
+                    <textarea
+                      autoFocus
+                      defaultValue={companyNotes[company.id] ?? ''}
+                      placeholder="비고 (정성 메모)"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim() === '' ? null : e.target.value.trim();
+                        saveCompanyNote(company.id, v);
+                        setNoteEditing(null);
+                      }}
+                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 resize-y min-h-[60px] focus:outline-none focus:border-blue-400"
+                    />
+                  ) : companyNotes[company.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => setNoteEditing(company.id)}
+                      title="비고 수정"
+                      className="text-left w-full text-xs text-gray-600 hover:text-blue-600 whitespace-pre-wrap break-words leading-snug"
+                    >
+                      {companyNotes[company.id]}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setNoteEditing(company.id)}
+                      className="text-xs text-gray-300 hover:text-blue-500"
+                    >
+                      ＋ 비고 입력
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
