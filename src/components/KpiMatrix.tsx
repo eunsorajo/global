@@ -207,6 +207,20 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
   };
 
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // 현재 저장 진행 중 여부 (셀/비고/파트너레벨 어느 것이든)
+  const isSaving = savingKeys.size > 0;
+
+  // "저장" 버튼: 입력 중이던 칸을 먼저 반영(포커스 아웃 → 자동 저장 트리거)한 뒤 확인 표시.
+  // 각 칸은 이미 자동 저장되므로, 이 버튼은 마지막 입력 반영 + "저장됨" 안심용이다.
+  const handleSave = () => {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2500);
+  };
 
   return (
     <div>
@@ -215,6 +229,30 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
           {toast}
         </div>
       )}
+      {savedFlash && !toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+          모두 저장되었습니다 ✓
+        </div>
+      )}
+
+      {/* 저장 상태 표시 + 저장 버튼 (입력은 자동 저장되며, 버튼은 마지막 입력 반영·확인용) */}
+      <div className="flex items-center justify-end gap-3 mb-2">
+        {isSaving ? (
+          <span className="text-xs text-amber-600 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            저장 중…
+          </span>
+        ) : (
+          <span className="text-xs text-green-600 flex items-center gap-1">✓ 저장됨</span>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg transition-colors"
+        >
+          저장
+        </button>
+      </div>
 
       <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
         <table className="text-sm border-collapse min-w-full">
@@ -348,7 +386,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
         </table>
       </div>
       <p className="text-xs text-gray-400 mt-3">
-        진척도는 입력 후 포커스를 벗어나면 자동 저장됩니다. 달성여부 버튼은 미정 → 달성 → 미달성 순으로 전환됩니다.
+        입력한 내용은 칸을 벗어나면 <b>자동 저장</b>됩니다. 확실히 하려면 <b>저장</b> 버튼을 누르세요(오른쪽 위 “저장됨 ✓” 표시로 확인). 달성여부 버튼은 미정 → 달성 → 미달성 순으로 전환됩니다.
       </p>
     </div>
   );
