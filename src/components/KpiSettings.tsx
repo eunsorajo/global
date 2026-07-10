@@ -19,6 +19,17 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
   const [agreement, setAgreement] = useState(partner.agreement_submitted);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // "저장" 버튼: 입력 중이던 칸을 먼저 반영(포커스 아웃 → 자동 저장 트리거)한 뒤 확인 표시.
+  // 각 항목은 이미 자동 저장되므로, 이 버튼은 마지막 입력 반영 + "저장됨" 안심용이다.
+  function handleSave() {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2500);
+  }
 
   // 새 KPI 폼
   const [newKpi, setNewKpi] = useState<{ category: KpiCategory; name: string; target: string; note: string }>({
@@ -172,6 +183,30 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2">{error}</div>
       )}
+      {savedFlash && !error && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+          모두 저장되었습니다 ✓
+        </div>
+      )}
+
+      {/* 저장 상태 표시 + 저장 버튼 (입력은 자동 저장되며, 버튼은 마지막 입력 반영·확인용) */}
+      <div className="flex items-center justify-end gap-3">
+        {busy ? (
+          <span className="text-xs text-amber-600 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            저장 중…
+          </span>
+        ) : (
+          <span className="text-xs text-green-600 flex items-center gap-1">✓ 저장됨</span>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg transition-colors"
+        >
+          저장
+        </button>
+      </div>
 
       {/* 협약서 토글 — 관리자 전용 (partner 에게는 상태만 표시) */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">
