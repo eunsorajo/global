@@ -9,7 +9,7 @@ function cellKey(companyId: string, kpiId: string) {
   return `${companyId}:${kpiId}`;
 }
 
-// 달성여부 토글 버튼: 미정(null) → 달성(true) → 미달성(false) → 미정
+// 상태 토글 버튼: 진행중(null) → 달성(true) → 미달성(false) → 진행중
 function nextAchieved(cur: AchievedState): AchievedState {
   if (cur === null) return true;
   if (cur === true) return false;
@@ -28,26 +28,24 @@ function AchievedToggle({
   saving?: boolean;
   // 권한 없음(예: partner 의 파트너 레벨 판정) → 읽기 전용
   disabled?: boolean;
-  // 정량 진행률(%) — 미정(null)이고 값이 있으면 "진행중 N%" 로 표시
+  // 정량 진행률(%) — 진행중(null)이고 값이 있으면 "진행중 N%" 로 표시
   progressPct?: number | null;
 }) {
-  const inProgress = value === null && progressPct != null;
+  // 상태 3종: 진행중(null) → 달성(true) → 미달성(false). 진행중이 기본값이며 그 칸 수치가 달성률에 반영됨.
   const label =
     value === true
       ? '✓ 달성'
       : value === false
         ? '✗ 미달성'
-        : inProgress
+        : progressPct != null
           ? `진행중 ${progressPct}%`
-          : '— 미정';
+          : '진행중';
   const cls =
     value === true
       ? 'bg-green-100 text-green-700 border-green-300'
       : value === false
         ? 'bg-red-100 text-red-700 border-red-300'
-        : inProgress
-          ? 'bg-blue-50 text-blue-700 border-blue-200'
-          : 'bg-gray-50 text-gray-400 border-gray-200';
+        : 'bg-blue-50 text-blue-700 border-blue-200';
   const inert = saving || disabled;
   return (
     <button
@@ -462,7 +460,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
         </table>
       </div>
       <p className="text-xs text-gray-400 mt-3">
-        각 칸에 <b>달성 수 / 목표 수</b>를 입력하면 진행률(%)이 자동 계산됩니다. 상태 버튼은 미정 → 달성 → 미달성 순으로 전환되며, <b>미정이면서 수치가 있으면 “진행중 N%”</b>로 표시됩니다. 그 아래 <b>비고</b>에 정성 메모를 적을 수 있어요. 입력은 자동 저장되며 <b>저장</b> 버튼으로 확인할 수 있습니다.
+        각 칸에 <b>달성 수 / 목표 수</b>를 입력하면 진행률(%)이 자동 계산됩니다. 상태 버튼은 <b>진행중 → 달성 → 미달성</b> 순으로 전환되며, <b>진행중이면 그 칸의 수치(달성/목표)가 달성률에 반영</b>됩니다(달성=100%, 미달성=0%). 그 아래 <b>비고</b>에 정성 메모를 적을 수 있어요. 입력은 자동 저장되며 <b>저장</b> 버튼으로 확인할 수 있습니다.
       </p>
     </div>
   );
