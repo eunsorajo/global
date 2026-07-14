@@ -20,6 +20,8 @@ export async function POST(req: NextRequest) {
     companyId?: string;
     kpiDefinitionId?: string;
     value?: string | null;
+    progressCurrent?: number | null;
+    progressTarget?: number | null;
     achieved?: boolean | null;
     note?: string | null;
   };
@@ -35,6 +37,12 @@ export async function POST(req: NextRequest) {
   }
   if (body.achieved !== undefined && body.achieved !== null && typeof body.achieved !== 'boolean') {
     return NextResponse.json({ error: 'achieved 는 boolean 또는 null 이어야 합니다.' }, { status: 400 });
+  }
+  // 정량(달성/목표) — 0 이상 정수 또는 null
+  for (const [k, v] of [['progressCurrent', body.progressCurrent], ['progressTarget', body.progressTarget]] as const) {
+    if (v !== undefined && v !== null && (!Number.isInteger(v) || v < 0)) {
+      return NextResponse.json({ error: `${k} 는 0 이상의 정수 또는 null 이어야 합니다.` }, { status: 400 });
+    }
   }
 
   // 권한: 대상 기업의 실제 partner_id 를 DB 에서 확인 (클라이언트 파라미터 불신).
@@ -66,6 +74,8 @@ export async function POST(req: NextRequest) {
         company_id: body.companyId,
         kpi_definition_id: body.kpiDefinitionId,
         value: body.value ?? null,
+        progress_current: body.progressCurrent ?? null,
+        progress_target: body.progressTarget ?? null,
         achieved: body.achieved ?? null,
         note: body.note ?? null,
         updated_by: session.email,

@@ -21,20 +21,33 @@ function AchievedToggle({
   onClick,
   saving,
   disabled,
+  progressPct,
 }: {
   value: AchievedState;
   onClick: () => void;
   saving?: boolean;
   // 권한 없음(예: partner 의 파트너 레벨 판정) → 읽기 전용
   disabled?: boolean;
+  // 정량 진행률(%) — 미정(null)이고 값이 있으면 "진행중 N%" 로 표시
+  progressPct?: number | null;
 }) {
-  const label = value === true ? '✓ 달성' : value === false ? '✗ 미달성' : '— 미정';
+  const inProgress = value === null && progressPct != null;
+  const label =
+    value === true
+      ? '✓ 달성'
+      : value === false
+        ? '✗ 미달성'
+        : inProgress
+          ? `진행중 ${progressPct}%`
+          : '— 미정';
   const cls =
     value === true
       ? 'bg-green-100 text-green-700 border-green-300'
       : value === false
         ? 'bg-red-100 text-red-700 border-red-300'
-        : 'bg-gray-50 text-gray-400 border-gray-200';
+        : inProgress
+          ? 'bg-blue-50 text-blue-700 border-blue-200'
+          : 'bg-gray-50 text-gray-400 border-gray-200';
   const inert = saving || disabled;
   return (
     <button
@@ -59,7 +72,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
       for (const k of kpiDefinitions) {
         const key = cellKey(c.id, k.id);
         if (!init[key]) {
-          init[key] = { progressId: null, companyId: c.id, kpiDefinitionId: k.id, value: null, achieved: null, note: null };
+          init[key] = { progressId: null, companyId: c.id, kpiDefinitionId: k.id, value: null, progressCurrent: null, progressTarget: null, achieved: null, note: null };
         }
       }
     }
@@ -78,6 +91,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
     Object.fromEntries(companies.map((c) => [c.id, c.note]))
   );
   const [noteEditing, setNoteEditing] = useState<string | null>(null); // 편집 중인 기업 id
+  const [cellNoteOpen, setCellNoteOpen] = useState<string | null>(null); // 편집 중인 셀 비고 키
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -108,6 +122,8 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
             companyId,
             kpiDefinitionId: kpiId,
             value: optimistic.value,
+            progressCurrent: optimistic.progressCurrent,
+            progressTarget: optimistic.progressTarget,
             achieved: optimistic.achieved,
             note: optimistic.note,
           }),
@@ -124,6 +140,8 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
             companyId,
             kpiDefinitionId: kpiId,
             value: data.progress.value,
+            progressCurrent: data.progress.progress_current,
+            progressTarget: data.progress.progress_target,
             achieved: data.progress.achieved,
             note: data.progress.note,
           },
@@ -200,7 +218,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
     let total = 0;
     for (const c of companies) {
       const cell = cells[cellKey(c.id, kpiId)];
-      if (cell && (cell.value || cell.achieved !== null)) total += 1;
+      if (cell && (cell.progressCurrent != null || cell.progressTarget != null || cell.achieved !== null)) total += 1;
       if (cell && cell.achieved === true) achieved += 1;
     }
     return { achieved, total };
@@ -324,26 +342,84 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
                   const key = cellKey(company.id, k.id);
                   const cell = cells[key];
                   const saving = savingKeys.has(key);
+                  const pct =
+                    cell.progressTarget && cell.progressTarget > 0
+                      ? Math.round(((cell.progressCurrent ?? 0) / cell.progressTarget) * 100)
+                      : null;
                   return (
                     <td key={k.id} className="px-2 py-2 border-l border-gray-100 align-top min-w-[160px]">
-                      <input
-                        type="text"
-                        // key 에 state 값을 포함해, 저장 실패 롤백 시 입력칸이 state 값으로
-                        // 리마운트되게 한다 (uncontrolled input 의 화면-상태 불일치 방지).
-                        key={`${key}:${cell.value ?? ''}`}
-                        defaultValue={cell.value ?? ''}
-                        placeholder="진척도 입력"
-                        onBlur={(e) => {
-                          const v = e.target.value.trim() === '' ? null : e.target.value;
-                          if (v !== (cell.value ?? null)) saveCell(company.id, k.id, { value: v });
-                        }}
-                        className="w-full text-xs border border-gray-200 rounded px-2 py-1 mb-1 focus:outline-none focus:border-blue-400"
-                      />
+                      {/* 정량: 달성 수 / 목표 수 */}
+                      <div className="flex items-center gap-1 mb-1">
+                        <input
+                          type="number"
+                          min={0}
+                          key={`c:${key}:${cell.progressCurrent ?? ''}`}
+                          defaultValue={cell.progressCurrent ?? ''}
+                          placeholder="달성"
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            if (raw !== '' && Number.isNaN(Number(raw))) return;
+                            const v = raw === '' ? null : Math.max(0, Math.trunc(Number(raw)));
+                            if (v !== (cell.progressCurrent ?? null)) saveCell(company.id, k.id, { progressCurrent: v });
+                          }}
+                          className="w-11 text-xs border border-gray-200 rounded px-1 py-1 text-right tabular-nums focus:outline-none focus:border-blue-400"
+                        />
+                        <span className="text-gray-400 text-xs">/</span>
+                        <input
+                          type="number"
+                          min={0}
+                          key={`t:${key}:${cell.progressTarget ?? ''}`}
+                          defaultValue={cell.progressTarget ?? ''}
+                          placeholder="목표"
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            if (raw !== '' && Number.isNaN(Number(raw))) return;
+                            const v = raw === '' ? null : Math.max(0, Math.trunc(Number(raw)));
+                            if (v !== (cell.progressTarget ?? null)) saveCell(company.id, k.id, { progressTarget: v });
+                          }}
+                          className="w-11 text-xs border border-gray-200 rounded px-1 py-1 text-right tabular-nums focus:outline-none focus:border-blue-400"
+                        />
+                        {pct != null && <span className="text-[11px] text-gray-500 ml-0.5 tabular-nums">{pct}%</span>}
+                      </div>
                       <AchievedToggle
                         value={cell.achieved}
+                        progressPct={pct}
                         onClick={() => saveCell(company.id, k.id, { achieved: nextAchieved(cell.achieved) })}
                         saving={saving}
                       />
+                      {/* 비고 (셀별 정성 메모) */}
+                      <div className="mt-1">
+                        {cellNoteOpen === key ? (
+                          <textarea
+                            autoFocus
+                            defaultValue={cell.note ?? ''}
+                            placeholder="비고 (정성 메모)"
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() === '' ? null : e.target.value.trim();
+                              if (v !== (cell.note ?? null)) saveCell(company.id, k.id, { note: v });
+                              setCellNoteOpen(null);
+                            }}
+                            className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 resize-y min-h-[42px] focus:outline-none focus:border-blue-400"
+                          />
+                        ) : cell.note ? (
+                          <button
+                            type="button"
+                            onClick={() => setCellNoteOpen(key)}
+                            title="비고 수정"
+                            className="text-left w-full text-[11px] text-gray-500 hover:text-blue-600 whitespace-pre-wrap break-words leading-snug"
+                          >
+                            <span className="text-gray-400">비고 </span>{cell.note}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setCellNoteOpen(key)}
+                            className="text-[11px] text-gray-300 hover:text-blue-500"
+                          >
+                            ＋ 비고
+                          </button>
+                        )}
+                      </div>
                     </td>
                   );
                 })}
@@ -386,7 +462,7 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
         </table>
       </div>
       <p className="text-xs text-gray-400 mt-3">
-        입력한 내용은 칸을 벗어나면 <b>자동 저장</b>됩니다. 확실히 하려면 <b>저장</b> 버튼을 누르세요(오른쪽 위 “저장됨 ✓” 표시로 확인). 달성여부 버튼은 미정 → 달성 → 미달성 순으로 전환됩니다.
+        각 칸에 <b>달성 수 / 목표 수</b>를 입력하면 진행률(%)이 자동 계산됩니다. 상태 버튼은 미정 → 달성 → 미달성 순으로 전환되며, <b>미정이면서 수치가 있으면 “진행중 N%”</b>로 표시됩니다. 그 아래 <b>비고</b>에 정성 메모를 적을 수 있어요. 입력은 자동 저장되며 <b>저장</b> 버튼으로 확인할 수 있습니다.
       </p>
     </div>
   );

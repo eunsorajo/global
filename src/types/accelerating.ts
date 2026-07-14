@@ -44,7 +44,9 @@ export interface KpiProgressRow {
   id: string;
   company_id: string;
   kpi_definition_id: string;
-  value: string | null;
+  value: string | null; // (구) 진척도 텍스트 — 013에서 비고로 이동, 미사용
+  progress_current: number | null; // 정량: 달성 수
+  progress_target: number | null; // 정량: 목표 수
   achieved: boolean | null;
   note: string | null;
   updated_at: string;
@@ -133,7 +135,9 @@ export interface MatrixCell {
   progressId: string | null; // 아직 진척도 row 가 없으면 null
   companyId: string;
   kpiDefinitionId: string;
-  value: string | null;
+  value: string | null; // (구) 진척도 텍스트 — 미사용
+  progressCurrent: number | null; // 정량: 달성 수
+  progressTarget: number | null; // 정량: 목표 수
   achieved: boolean | null;
   note: string | null;
 }

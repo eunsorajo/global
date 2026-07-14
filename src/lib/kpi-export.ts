@@ -125,10 +125,16 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
         const rowCells: (string | number)[] = [company.name];
         for (const def of kpiDefinitions) {
           const cell = progress[`${company.id}:${def.id}`];
-          const value = cell?.value?.trim() ?? '';
+          const cur = cell?.progressCurrent ?? null;
+          const tgt = cell?.progressTarget ?? null;
           const achieved = cell?.achieved;
-          const mark = achieved === true ? ' ○' : achieved === false ? ' ×' : '';
-          rowCells.push(value ? `${value}${mark}` : mark.trim() || '-');
+          const note = cell?.note?.trim() ?? '';
+          const pct = tgt && tgt > 0 ? Math.round(((cur ?? 0) / tgt) * 100) : null;
+          const quant = cur != null || tgt != null ? `${cur ?? 0}/${tgt ?? 0}${pct != null ? ` (${pct}%)` : ''}` : '';
+          const mark = achieved === true ? ' ○달성' : achieved === false ? ' ×미달성' : pct != null ? ' 진행중' : '';
+          let text = quant ? `${quant}${mark}` : mark.trim() || '-';
+          if (note) text += `\n[비고] ${note}`;
+          rowCells.push(text);
 
           totalByDef.set(def.id, (totalByDef.get(def.id) ?? 0) + 1);
           if (achieved === true) achievedByDef.set(def.id, (achievedByDef.get(def.id) ?? 0) + 1);

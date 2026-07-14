@@ -180,6 +180,8 @@ export async function getPartnerMatrix(partnerId: string): Promise<PartnerMatrix
       companyId: row.company_id,
       kpiDefinitionId: row.kpi_definition_id,
       value: row.value,
+      progressCurrent: row.progress_current,
+      progressTarget: row.progress_target,
       achieved: row.achieved,
       note: row.note,
     };
