@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import type { PartnerMatrix, MatrixCell } from '@/types/accelerating';
+import MatrixExportButton from '@/components/MatrixExportButton';
 
 type AchievedState = boolean | null;
 
@@ -251,8 +252,9 @@ export default function KpiMatrix({ matrix, isAdmin = true }: { matrix: PartnerM
         </div>
       )}
 
-      {/* 저장 상태 표시 + 저장 버튼 (입력은 자동 저장되며, 버튼은 마지막 입력 반영·확인용) */}
+      {/* 엑셀 내보내기 + 저장 상태 표시 + 저장 버튼 (입력은 자동 저장되며, 버튼은 마지막 입력 반영·확인용) */}
       <div className="flex items-center justify-end gap-3 mb-2">
+        <MatrixExportButton partnerId={partner.id} />
         {isSaving ? (
           <span className="text-xs text-amber-600 flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />

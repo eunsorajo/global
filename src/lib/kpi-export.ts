@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { getPartnerSummaries, getPartnerMatrix } from '@/lib/kpi-data';
 import { getSupabaseAdmin, describeSupabaseError } from '@/lib/supabase';
 import type { MeetingRow, FollowupRow } from '@/types/meeting';
+import type { PartnerMatrix } from '@/types/accelerating';
 
 export class KpiExportError extends Error {}
 
@@ -45,6 +46,105 @@ function safeSheetName(base: string, used: Set<string>): string {
 export function exportFileName(): string {
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
   return `KPI현황_${kst.toISOString().slice(0, 10)}.xlsx`;
+}
+
+export function partnerMatrixFileName(partnerName: string): string {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const safe = partnerName.replace(/[\\/:*?"<>|]/g, ' ').trim() || '파트너';
+  return `KPI매트릭스_${safe}_${kst.toISOString().slice(0, 10)}.xlsx`;
+}
+
+// 한 파트너의 KPI 매트릭스를 워크시트로 추가한다.
+// (전체 내보내기의 파트너별 시트 + 단일 파트너 내보내기 공용)
+function addPartnerMatrixSheet(wb: ExcelJS.Workbook, matrix: PartnerMatrix, usedNames: Set<string>) {
+  const { partner, companies, kpiDefinitions, progress } = matrix;
+
+  const sheetName = safeSheetName(`${partner.no}.${partner.name}`, usedNames);
+  const ws = wb.addWorksheet(sheetName);
+
+  // 헤더: 참여기업 + KPI별 (항목명 + 목표) + 비고
+  const headerCells = ['참여기업'];
+  for (const def of kpiDefinitions) {
+    const target = def.target ? ` (목표: ${def.target})` : '';
+    headerCells.push(`${def.name}${target}`);
+  }
+  headerCells.push('비고'); // 참여기업별 정성 메모
+  const headerRow = ws.addRow(headerCells);
+  styleHeaderRow(headerRow);
+
+  // KPI별 달성 집계 (셀 단위)
+  const achievedByDef = new Map<string, number>();
+  const totalByDef = new Map<string, number>();
+
+  if (companies.length > 0) {
+    for (const company of companies) {
+      const rowCells: (string | number)[] = [company.name];
+      for (const def of kpiDefinitions) {
+        const cell = progress[`${company.id}:${def.id}`];
+        const cur = cell?.progressCurrent ?? null;
+        const tgt = cell?.progressTarget ?? null;
+        const achieved = cell?.achieved;
+        const note = cell?.note?.trim() ?? '';
+        const pct = tgt && tgt > 0 ? Math.round(((cur ?? 0) / tgt) * 100) : null;
+        const quant = cur != null || tgt != null ? `${cur ?? 0}/${tgt ?? 0}${pct != null ? ` (${pct}%)` : ''}` : '';
+        const mark = achieved === true ? ' ○달성' : achieved === false ? ' ×미달성' : pct != null ? ' 진행중' : '';
+        let text = quant ? `${quant}${mark}` : mark.trim() || '-';
+        if (note) text += `\n[비고] ${note}`;
+        rowCells.push(text);
+
+        totalByDef.set(def.id, (totalByDef.get(def.id) ?? 0) + 1);
+        if (achieved === true) achievedByDef.set(def.id, (achievedByDef.get(def.id) ?? 0) + 1);
+      }
+      rowCells.push(company.note?.trim() || ''); // 참여기업별 비고
+      const dataRow = ws.addRow(rowCells);
+      dataRow.alignment = { vertical: 'top', wrapText: true }; // 비고 줄바꿈 표시
+    }
+  } else {
+    // 참여기업이 없으면 파트너 레벨 KPI 달성여부만 표시
+    const rowCells: (string | number)[] = ['(참여기업 미등록 — 파트너 레벨)'];
+    for (const def of kpiDefinitions) {
+      rowCells.push(def.achieved === true ? '○' : def.achieved === false ? '×' : '-');
+    }
+    ws.addRow(rowCells);
+  }
+
+  // 하단 KPI별 달성 집계 행
+  if (companies.length > 0) {
+    ws.addRow([]);
+    const summaryCells: (string | number)[] = ['KPI별 달성 집계'];
+    for (const def of kpiDefinitions) {
+      const total = totalByDef.get(def.id) ?? 0;
+      const achieved = achievedByDef.get(def.id) ?? 0;
+      const rate = total > 0 ? Math.round((achieved / total) * 100) : 0;
+      summaryCells.push(`${achieved}/${total} (${rate}%)`);
+    }
+    const summaryRow = ws.addRow(summaryCells);
+    summaryRow.font = { bold: true };
+    summaryRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F8FF' } };
+    });
+  }
+
+  // 컬럼 너비
+  ws.getColumn(1).width = 24;
+  for (let c = 2; c <= kpiDefinitions.length + 1; c++) {
+    ws.getColumn(c).width = 22;
+  }
+  ws.getColumn(kpiDefinitions.length + 2).width = 40; // 비고 열
+  ws.getColumn(1).alignment = { vertical: 'middle' };
+  ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }];
+}
+
+// 단일 파트너의 KPI 매트릭스만 담은 워크북. (파일명용 파트너명 동봉)
+export async function buildPartnerMatrixWorkbook(partnerId: string): Promise<{ buffer: Buffer; name: string }> {
+  const matrix = await getPartnerMatrix(partnerId);
+  if (!matrix) throw new KpiExportError('해당 파트너를 찾을 수 없습니다.');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Partner Network';
+  wb.created = new Date();
+  addPartnerMatrixSheet(wb, matrix, new Set<string>());
+  const arr = await wb.xlsx.writeBuffer();
+  return { buffer: Buffer.from(arr), name: matrix.partner.name };
 }
 
 export async function buildKpiExportWorkbook(): Promise<Buffer> {
@@ -98,85 +198,8 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
   const matrices = await Promise.all(kpiPartners.map((s) => getPartnerMatrix(s.id)));
 
   for (let pi = 0; pi < kpiPartners.length; pi += 1) {
-    const s = kpiPartners[pi];
     const matrix = matrices[pi];
-    if (!matrix) continue;
-    const { companies, kpiDefinitions, progress } = matrix;
-
-    const sheetName = safeSheetName(`${s.no}.${s.name}`, usedNames);
-    const ws = wb.addWorksheet(sheetName);
-
-    // 헤더: 참여기업 + KPI별 (항목명 + 목표)
-    const headerCells = ['참여기업'];
-    for (const def of kpiDefinitions) {
-      const target = def.target ? ` (목표: ${def.target})` : '';
-      headerCells.push(`${def.name}${target}`);
-    }
-    headerCells.push('비고'); // 참여기업별 정성 메모
-    const headerRow = ws.addRow(headerCells);
-    styleHeaderRow(headerRow);
-
-    // KPI별 달성 집계 (셀 단위)
-    const achievedByDef = new Map<string, number>();
-    const totalByDef = new Map<string, number>();
-
-    if (companies.length > 0) {
-      for (const company of companies) {
-        const rowCells: (string | number)[] = [company.name];
-        for (const def of kpiDefinitions) {
-          const cell = progress[`${company.id}:${def.id}`];
-          const cur = cell?.progressCurrent ?? null;
-          const tgt = cell?.progressTarget ?? null;
-          const achieved = cell?.achieved;
-          const note = cell?.note?.trim() ?? '';
-          const pct = tgt && tgt > 0 ? Math.round(((cur ?? 0) / tgt) * 100) : null;
-          const quant = cur != null || tgt != null ? `${cur ?? 0}/${tgt ?? 0}${pct != null ? ` (${pct}%)` : ''}` : '';
-          const mark = achieved === true ? ' ○달성' : achieved === false ? ' ×미달성' : pct != null ? ' 진행중' : '';
-          let text = quant ? `${quant}${mark}` : mark.trim() || '-';
-          if (note) text += `\n[비고] ${note}`;
-          rowCells.push(text);
-
-          totalByDef.set(def.id, (totalByDef.get(def.id) ?? 0) + 1);
-          if (achieved === true) achievedByDef.set(def.id, (achievedByDef.get(def.id) ?? 0) + 1);
-        }
-        rowCells.push(company.note?.trim() || ''); // 참여기업별 비고
-        const dataRow = ws.addRow(rowCells);
-        dataRow.alignment = { vertical: 'top', wrapText: true }; // 비고 줄바꿈 표시
-      }
-    } else {
-      // 참여기업이 없으면 파트너 레벨 KPI 달성여부만 표시
-      const rowCells: (string | number)[] = ['(참여기업 미등록 — 파트너 레벨)'];
-      for (const def of kpiDefinitions) {
-        rowCells.push(def.achieved === true ? '○' : def.achieved === false ? '×' : '-');
-      }
-      ws.addRow(rowCells);
-    }
-
-    // 하단 KPI별 달성 집계 행
-    if (companies.length > 0) {
-      ws.addRow([]);
-      const summaryCells: (string | number)[] = ['KPI별 달성 집계'];
-      for (const def of kpiDefinitions) {
-        const total = totalByDef.get(def.id) ?? 0;
-        const achieved = achievedByDef.get(def.id) ?? 0;
-        const rate = total > 0 ? Math.round((achieved / total) * 100) : 0;
-        summaryCells.push(`${achieved}/${total} (${rate}%)`);
-      }
-      const summaryRow = ws.addRow(summaryCells);
-      summaryRow.font = { bold: true };
-      summaryRow.eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F8FF' } };
-      });
-    }
-
-    // 컬럼 너비
-    ws.getColumn(1).width = 24;
-    for (let c = 2; c <= kpiDefinitions.length + 1; c++) {
-      ws.getColumn(c).width = 22;
-    }
-    ws.getColumn(kpiDefinitions.length + 2).width = 40; // 비고 열
-    ws.getColumn(1).alignment = { vertical: 'middle' };
-    ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }];
+    if (matrix) addPartnerMatrixSheet(wb, matrix, usedNames);
   }
 
   // ===== 회의록 시트 =====
