@@ -67,48 +67,35 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
     defToPartner.set(d.id, d.partner_id);
   }
 
-  // 파트너별 정량 진행률 집계: 달성수 합(num) / 목표수 합(den).
-  //  - ✓달성: 100% (목표>0 이면 목표만큼, 아니면 1단위)
-  //  - ✗미달성: 0% (분모에만 — 판정된 미달)
-  //  - 미정 + 목표 입력: 달성수/목표수 (달성수는 목표 상한)
-  //  - 아무 데이터 없음(수치도 판정도 없음): 제외
+  // 파트너별 정량 진행률 합(fraction). 분모는 아래에서 기업수 × KPI수(모든 칸).
+  //  칸별 기여(0~1): ✓달성=1, ✗미달성=0, 미정+목표입력=현재÷목표(상한 1), 빈칸=0(row 자체가 없어 합에 미포함).
+  //  → 목표 미입력·미판정 칸도 분모(전체 칸)에는 들어가므로 0%로 반영된다.
   // 존재하는 기업의 셀만 카운트 → 삭제된 기업의 고아 진척도 방어.
-  const numByPartner = new Map<string, number>();
-  const denByPartner = new Map<string, number>();
+  const fracSumByPartner = new Map<string, number>();
   for (const p of progress) {
     const partnerId = defToPartner.get(p.kpi_definition_id);
     if (!partnerId) continue;
     const companySet = companyIdsByPartner.get(partnerId);
     if (!companySet || !companySet.has(p.company_id)) continue;
-    const tgt = p.progress_target != null && p.progress_target > 0 ? p.progress_target : null;
-    let num: number;
-    let den: number;
-    if (p.achieved === true) {
-      den = tgt ?? 1;
-      num = den;
-    } else if (p.achieved === false) {
-      den = tgt ?? 1;
-      num = 0;
-    } else if (tgt != null) {
-      den = tgt;
-      num = Math.min(p.progress_current ?? 0, tgt);
-    } else {
-      continue; // 판정도 수치도 없음
+    let frac = 0;
+    if (p.achieved === true) frac = 1;
+    else if (p.achieved === false) frac = 0;
+    else if (p.progress_target != null && p.progress_target > 0) {
+      frac = Math.min((p.progress_current ?? 0) / p.progress_target, 1);
     }
-    numByPartner.set(partnerId, (numByPartner.get(partnerId) ?? 0) + num);
-    denByPartner.set(partnerId, (denByPartner.get(partnerId) ?? 0) + den);
+    fracSumByPartner.set(partnerId, (fracSumByPartner.get(partnerId) ?? 0) + frac);
   }
 
   return partners.map((partner) => {
     const companyCount = companyIdsByPartner.get(partner.id)?.size ?? 0;
     const kpiCount = kpiCountByPartner.get(partner.id) ?? 0;
 
-    // 달성률(정량) = 달성수 합 ÷ 목표수 합.
-    //   KPI/기업이 없으면 null(미정의), 있으나 입력 데이터가 없으면 0%.
-    const num = numByPartner.get(partner.id) ?? 0;
-    const den = denByPartner.get(partner.id) ?? 0;
-    const achievementRate =
-      kpiCount === 0 || companyCount === 0 ? null : den > 0 ? Math.round((num / den) * 100) : 0;
+    // 달성률(정량) = 진행률 합 ÷ 전체 칸수(기업수 × KPI수).
+    //   모든 칸을 분모에 넣으므로, 목표 미입력·미판정 칸은 0%로 반영.
+    //   KPI/기업이 없으면 null(미정의).
+    const totalUnits = companyCount * kpiCount;
+    const achievedUnits = fracSumByPartner.get(partner.id) ?? 0;
+    const achievementRate = totalUnits > 0 ? Math.round((achievedUnits / totalUnits) * 100) : null;
 
     return {
       id: partner.id,
@@ -120,8 +107,8 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
       kpiCount,
       status: deriveStatus(partner.agreement_submitted, kpiCount, companyCount),
       achievementRate,
-      achievedCount: num,
-      totalKpiUnits: den,
+      achievedCount: Math.round(achievedUnits),
+      totalKpiUnits: totalUnits,
     } satisfies PartnerSummary;
   });
 }

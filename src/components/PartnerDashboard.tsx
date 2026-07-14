@@ -3,32 +3,26 @@ import type { PartnerMatrix } from '@/types/accelerating';
 
 // 매트릭스로부터 달성 현황(정량)을 집계한다.
 // (lib/kpi-data.getPartnerSummaries 와 동일한 규칙:
-//  달성률 = 달성수 합 ÷ 목표수 합.
-//   ✓달성=100%(목표 또는 1단위), ✗미달성=0%, 미정+목표입력=달성/목표, 데이터 없음=제외)
+//  달성률 = 진행률 합 ÷ 전체 칸수(기업수 × KPI수).
+//   칸별 진행률(0~1): ✓달성=1, ✗미달성·빈칸=0, 미정+목표입력=현재÷목표(상한 1).
+//   → 목표 미입력·미판정 칸도 분모에 포함되어 0%로 반영.)
 function summarize(matrix: PartnerMatrix): { total: number; achieved: number; rate: number | null } {
   const { kpiDefinitions, companies, progress } = matrix;
-  let num = 0;
-  let den = 0;
+  const total = kpiDefinitions.length * companies.length;
+  let sum = 0;
   for (const def of kpiDefinitions) {
     for (const company of companies) {
       const cell = progress[`${company.id}:${def.id}`];
       if (!cell) continue;
-      const tgt = cell.progressTarget != null && cell.progressTarget > 0 ? cell.progressTarget : null;
-      if (cell.achieved === true) {
-        const d = tgt ?? 1;
-        den += d;
-        num += d;
-      } else if (cell.achieved === false) {
-        den += tgt ?? 1;
-      } else if (tgt != null) {
-        den += tgt;
-        num += Math.min(cell.progressCurrent ?? 0, tgt);
+      if (cell.achieved === true) sum += 1;
+      else if (cell.achieved === false) sum += 0;
+      else if (cell.progressTarget != null && cell.progressTarget > 0) {
+        sum += Math.min((cell.progressCurrent ?? 0) / cell.progressTarget, 1);
       }
     }
   }
-  const hasKpi = kpiDefinitions.length > 0 && companies.length > 0;
-  const rate = !hasKpi ? null : den > 0 ? Math.round((num / den) * 100) : 0;
-  return { total: den, achieved: num, rate };
+  const rate = total > 0 ? Math.round((sum / total) * 100) : null;
+  return { total, achieved: Math.round(sum), rate };
 }
 
 // 파트너 전용 대시보드(관리자 화면과 시각적으로 구분되는 단순 레이아웃).
@@ -65,7 +59,7 @@ export default function PartnerDashboard({ matrix }: { matrix: PartnerMatrix }) 
             <span className="text-sm text-gray-400 whitespace-nowrap">KPI 미정의</span>
           ) : (
             <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-              달성 {achieved} / 목표 {total} · {rate}%
+              달성 {achieved} / 전체 {total}칸 · {rate}%
             </span>
           )}
         </div>
