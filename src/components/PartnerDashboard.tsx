@@ -1,22 +1,34 @@
 import KpiPartnerTabs from '@/components/KpiPartnerTabs';
 import type { PartnerMatrix } from '@/types/accelerating';
 
-// 매트릭스로부터 달성 현황을 집계한다.
+// 매트릭스로부터 달성 현황(정량)을 집계한다.
 // (lib/kpi-data.getPartnerSummaries 와 동일한 규칙:
-//  분모 = 기업수 × KPI수, 분자 = "✓ 달성"으로 찍힌 셀 수. 미입력 칸은 미달성(0).
-//  파트너 레벨 달성 플래그는 달성률 계산에서 제외 — 매트릭스 표시 전용.)
+//  달성률 = 달성수 합 ÷ 목표수 합.
+//   ✓달성=100%(목표 또는 1단위), ✗미달성=0%, 미정+목표입력=달성/목표, 데이터 없음=제외)
 function summarize(matrix: PartnerMatrix): { total: number; achieved: number; rate: number | null } {
   const { kpiDefinitions, companies, progress } = matrix;
-  const total = kpiDefinitions.length * companies.length;
-  let achieved = 0;
+  let num = 0;
+  let den = 0;
   for (const def of kpiDefinitions) {
     for (const company of companies) {
       const cell = progress[`${company.id}:${def.id}`];
-      if (cell && cell.achieved === true) achieved += 1;
+      if (!cell) continue;
+      const tgt = cell.progressTarget != null && cell.progressTarget > 0 ? cell.progressTarget : null;
+      if (cell.achieved === true) {
+        const d = tgt ?? 1;
+        den += d;
+        num += d;
+      } else if (cell.achieved === false) {
+        den += tgt ?? 1;
+      } else if (tgt != null) {
+        den += tgt;
+        num += Math.min(cell.progressCurrent ?? 0, tgt);
+      }
     }
   }
-  const rate = total > 0 ? Math.round((achieved / total) * 100) : null;
-  return { total, achieved, rate };
+  const hasKpi = kpiDefinitions.length > 0 && companies.length > 0;
+  const rate = !hasKpi ? null : den > 0 ? Math.round((num / den) * 100) : 0;
+  return { total: den, achieved: num, rate };
 }
 
 // 파트너 전용 대시보드(관리자 화면과 시각적으로 구분되는 단순 레이아웃).
@@ -53,7 +65,7 @@ export default function PartnerDashboard({ matrix }: { matrix: PartnerMatrix }) 
             <span className="text-sm text-gray-400 whitespace-nowrap">KPI 미정의</span>
           ) : (
             <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-              달성 {achieved} / 전체 {total} · {rate}%
+              달성 {achieved} / 목표 {total} · {rate}%
             </span>
           )}
         </div>

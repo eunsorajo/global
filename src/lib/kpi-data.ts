@@ -29,7 +29,7 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
     supabase.from('partners').select('*').order('no', { ascending: true }),
     supabase.from('companies').select('id, partner_id'),
     supabase.from('kpi_definitions').select('id, partner_id'),
-    supabase.from('kpi_progress').select('kpi_definition_id, company_id, achieved'),
+    supabase.from('kpi_progress').select('kpi_definition_id, company_id, progress_current, progress_target, achieved'),
   ]);
 
   for (const r of [partnersRes, companiesRes, defsRes, progressRes]) {
@@ -39,7 +39,13 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
   const partners = (partnersRes.data ?? []) as PartnerRow[];
   const companies = (companiesRes.data ?? []) as { id: string; partner_id: string }[];
   const defs = (defsRes.data ?? []) as { id: string; partner_id: string }[];
-  const progress = (progressRes.data ?? []) as { kpi_definition_id: string; company_id: string; achieved: boolean | null }[];
+  const progress = (progressRes.data ?? []) as {
+    kpi_definition_id: string;
+    company_id: string;
+    progress_current: number | null;
+    progress_target: number | null;
+    achieved: boolean | null;
+  }[];
 
   // 인덱스 구성
   // 파트너별 기업 집합 (존재하는 기업만 — 분모 = 기업수 × KPI수, 고아 진척도 행 방어용)
@@ -61,31 +67,48 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
     defToPartner.set(d.id, d.partner_id);
   }
 
-  // 파트너별 "✓ 달성" 셀 수 (셀 단위 집계).
-  // 존재하는 기업의 셀만 카운트 → 삭제된 기업의 고아 진척도 행이 100%를 넘기는 것 방지.
-  const achievedCellsByPartner = new Map<string, number>();
+  // 파트너별 정량 진행률 집계: 달성수 합(num) / 목표수 합(den).
+  //  - ✓달성: 100% (목표>0 이면 목표만큼, 아니면 1단위)
+  //  - ✗미달성: 0% (분모에만 — 판정된 미달)
+  //  - 미정 + 목표 입력: 달성수/목표수 (달성수는 목표 상한)
+  //  - 아무 데이터 없음(수치도 판정도 없음): 제외
+  // 존재하는 기업의 셀만 카운트 → 삭제된 기업의 고아 진척도 방어.
+  const numByPartner = new Map<string, number>();
+  const denByPartner = new Map<string, number>();
   for (const p of progress) {
-    if (p.achieved !== true) continue;
     const partnerId = defToPartner.get(p.kpi_definition_id);
     if (!partnerId) continue;
     const companySet = companyIdsByPartner.get(partnerId);
     if (!companySet || !companySet.has(p.company_id)) continue;
-    achievedCellsByPartner.set(partnerId, (achievedCellsByPartner.get(partnerId) ?? 0) + 1);
+    const tgt = p.progress_target != null && p.progress_target > 0 ? p.progress_target : null;
+    let num: number;
+    let den: number;
+    if (p.achieved === true) {
+      den = tgt ?? 1;
+      num = den;
+    } else if (p.achieved === false) {
+      den = tgt ?? 1;
+      num = 0;
+    } else if (tgt != null) {
+      den = tgt;
+      num = Math.min(p.progress_current ?? 0, tgt);
+    } else {
+      continue; // 판정도 수치도 없음
+    }
+    numByPartner.set(partnerId, (numByPartner.get(partnerId) ?? 0) + num);
+    denByPartner.set(partnerId, (denByPartner.get(partnerId) ?? 0) + den);
   }
 
   return partners.map((partner) => {
     const companyCount = companyIdsByPartner.get(partner.id)?.size ?? 0;
     const kpiCount = kpiCountByPartner.get(partner.id) ?? 0;
 
-    // 달성률 = ✓달성 셀 수 / (기업수 × KPI수).
-    //   모든 (기업 × KPI) 칸을 1단위로 보고, "✓ 달성"으로 찍힌 칸만 분자로 센다.
-    //   미입력·미정·미달성 칸은 전부 미달성(0)으로 간주.
-    //   파트너 레벨 달성 플래그(kpi_definitions.achieved)는 달성률 계산에서 제외 — 매트릭스 표시 전용.
-    const totalUnits = companyCount * kpiCount;
-    const achievedUnits = achievedCellsByPartner.get(partner.id) ?? 0;
-    const achievementRate = totalUnits > 0
-      ? Math.round((achievedUnits / totalUnits) * 100)
-      : null;
+    // 달성률(정량) = 달성수 합 ÷ 목표수 합.
+    //   KPI/기업이 없으면 null(미정의), 있으나 입력 데이터가 없으면 0%.
+    const num = numByPartner.get(partner.id) ?? 0;
+    const den = denByPartner.get(partner.id) ?? 0;
+    const achievementRate =
+      kpiCount === 0 || companyCount === 0 ? null : den > 0 ? Math.round((num / den) * 100) : 0;
 
     return {
       id: partner.id,
@@ -97,8 +120,8 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
       kpiCount,
       status: deriveStatus(partner.agreement_submitted, kpiCount, companyCount),
       achievementRate,
-      achievedCount: achievedUnits,
-      totalKpiUnits: totalUnits,
+      achievedCount: num,
+      totalKpiUnits: den,
     } satisfies PartnerSummary;
   });
 }
