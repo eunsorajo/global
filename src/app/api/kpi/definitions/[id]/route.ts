@@ -91,9 +91,11 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
 
+  let partnerId: string;
   try {
-    const partnerId = await getKpiDefinitionPartnerId(id);
-    if (!partnerId) return NextResponse.json({ error: '해당 KPI 정의를 찾을 수 없습니다.' }, { status: 404 });
+    const pid = await getKpiDefinitionPartnerId(id);
+    if (!pid) return NextResponse.json({ error: '해당 KPI 정의를 찾을 수 없습니다.' }, { status: 404 });
+    partnerId = pid;
     assertPartnerAccess(session, partnerId);
     if (session.role !== 'admin') {
       const { submitted } = await getPartnerAgreement(partnerId);
@@ -108,5 +110,26 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from('kpi_definitions').delete().eq('id', id);
   if (error) return NextResponse.json({ error: describeSupabaseError(error) }, { status: 500 });
+
+  // 삭제 후 남은 정의를 1..N 으로 재번호 (중간 삭제로 생기는 순번 구멍 제거).
+  // 오름차순으로 낮은 번호부터 채워 unique(partner_id, kpi_order) 충돌을 피한다.
+  // 재번호 실패는 삭제 성공에 영향 없음(순번 구멍은 표시상 문제일 뿐) → 베스트에포트.
+  try {
+    const { data: remaining } = await supabase
+      .from('kpi_definitions')
+      .select('id, kpi_order')
+      .eq('partner_id', partnerId)
+      .order('kpi_order', { ascending: true });
+    for (let i = 0; i < (remaining?.length ?? 0); i += 1) {
+      const desired = i + 1;
+      const row = remaining![i] as { id: string; kpi_order: number };
+      if (row.kpi_order !== desired) {
+        await supabase.from('kpi_definitions').update({ kpi_order: desired }).eq('id', row.id);
+      }
+    }
+  } catch (e) {
+    console.error('[DELETE kpi_definitions] 재번호 실패:', e instanceof Error ? e.message : e);
+  }
+
   return NextResponse.json({ ok: true });
 }
