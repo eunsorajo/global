@@ -12,11 +12,10 @@ interface Props {
   isAdmin: boolean;
 }
 
-export default function KpiSettings({ partner, initialDefinitions, initialCompanies, isAdmin }: Props) {
+export default function KpiSettings({ partner, initialDefinitions, initialCompanies }: Props) {
   const router = useRouter();
   const [defs, setDefs] = useState<KpiDefinitionRow[]>(initialDefinitions);
   const [companies, setCompanies] = useState<CompanyRow[]>(initialCompanies);
-  const [agreement, setAgreement] = useState(partner.agreement_submitted);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -122,19 +121,6 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
     }
   }
 
-  // ---------- 협약서 토글 ----------
-  async function toggleAgreement() {
-    const next = !agreement;
-    setAgreement(next);
-    try {
-      await call(`/api/acc-partners/${partner.id}`, 'PATCH', { agreementSubmitted: next });
-      refresh();
-    } catch (e) {
-      setAgreement(!next);
-      setError((e as Error).message);
-    }
-  }
-
   // ---------- 참여기업 ----------
   async function addCompany() {
     if (!newCompany.name.trim()) {
@@ -175,8 +161,8 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
 
   const input = 'border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-400';
 
-  // partner 는 협약 제출 후 KPI 정의를 편집할 수 없다 (서버에서도 거부). 잠금 여부.
-  const kpiLocked = !isAdmin && agreement;
+  // 협약서 개념 제거 — KPI 편집 잠금 없음(파트너도 항상 편집 가능). 권한은 서버에서 집행.
+  const kpiLocked = false;
 
   return (
     <div className="space-y-8">
@@ -207,45 +193,6 @@ export default function KpiSettings({ partner, initialDefinitions, initialCompan
           저장
         </button>
       </div>
-
-      {/* 협약서 토글 — 관리자 전용 (partner 에게는 상태만 표시) */}
-      <section className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900">협약서 제출 여부</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {isAdmin
-                ? '미제출 상태에서도 KPI 항목을 미리 정의할 수 있습니다.'
-                : '협약 제출 여부는 관리자가 확정합니다.'}
-            </p>
-          </div>
-          {isAdmin ? (
-            <button
-              onClick={toggleAgreement}
-              className={`text-sm px-3 py-1.5 rounded-lg border shrink-0 whitespace-nowrap ${
-                agreement
-                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                  : 'bg-red-50 text-red-600 border-red-200'
-              }`}
-            >
-              {agreement ? '제출 완료' : '미제출'} (클릭하여 전환)
-            </button>
-          ) : (
-            <span
-              className={`text-sm px-3 py-1.5 rounded-lg border shrink-0 whitespace-nowrap ${
-                agreement ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-600 border-red-200'
-              }`}
-            >
-              {agreement ? '제출 완료' : '미제출'}
-            </span>
-          )}
-        </div>
-        {kpiLocked && (
-          <p className="text-xs text-gray-500 mt-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-            협약이 제출되어 KPI 항목은 잠금 상태입니다. 수정이 필요하면 관리자에게 문의해주세요.
-          </p>
-        )}
-      </section>
 
       {/* KPI 정의 관리 */}
       <section className="bg-white rounded-xl border border-gray-200 p-5">

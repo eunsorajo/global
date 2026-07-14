@@ -103,6 +103,8 @@ export async function getPartnerSummaries(): Promise<PartnerSummary[]> {
       country: partner.country,
       name: partner.name,
       agreementSubmitted: partner.agreement_submitted,
+      programType: partner.program_type,
+      programPhase: partner.program_phase,
       companyCount,
       kpiCount,
       status: deriveStatus(partner.agreement_submitted, kpiCount, companyCount),

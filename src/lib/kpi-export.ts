@@ -60,8 +60,8 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
     'No.',
     '국가',
     '파트너',
+    '프로그램',
     '참여기업 수',
-    '협약서 제출',
     'KPI 정의 수',
     '달성률(%)',
   ]);
@@ -71,8 +71,8 @@ export async function buildKpiExportWorkbook(): Promise<Buffer> {
       s.no,
       s.country,
       s.name,
+      s.programType ?? '',
       s.companyCount,
-      s.agreementSubmitted ? '제출' : '미제출',
       s.kpiCount,
       s.achievementRate === null ? '미정의' : s.achievementRate,
     ]);

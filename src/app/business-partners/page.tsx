@@ -44,8 +44,6 @@ export default async function BusinessPartnersPage() {
   }
 
   const totalCompanies = partners.reduce((s, p) => s + p.companyCount, 0);
-  const submitted = partners.filter((p) => p.agreementSubmitted).length;
-  const submitRate = partners.length > 0 ? Math.round((submitted / partners.length) * 100) : 0;
 
   // 상태 구분 카운트
   const statusCounts = {
@@ -66,7 +64,7 @@ export default async function BusinessPartnersPage() {
         <KpiExportButton />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-500 mb-1">사업 파트너</p>
           <p className="text-2xl font-bold text-gray-900">{partners.length}</p>
@@ -74,11 +72,6 @@ export default async function BusinessPartnersPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-500 mb-1">참여기업 총수</p>
           <p className="text-2xl font-bold text-blue-600">{totalCompanies}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs text-gray-500 mb-1">협약 제출 비율</p>
-          <p className="text-2xl font-bold text-purple-600">{submitRate}%</p>
-          <p className="text-xs text-gray-400 mt-0.5">{submitted}/{partners.length}곳</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-500 mb-1">상태 구분</p>

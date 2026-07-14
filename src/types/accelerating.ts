@@ -11,6 +11,8 @@ export interface PartnerRow {
   country: string;
   name: string;
   agreement_submitted: boolean;
+  program_type: string | null;
+  program_phase: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +65,8 @@ export interface PartnerSummary {
   country: string;
   name: string;
   agreementSubmitted: boolean;
+  programType: string | null; // 'AC' | 'PoC' | '스케일업' | 'PoC/스케일업' | '전시회'
+  programPhase: string | null; // '1차' | '2차' | '전시회'
   companyCount: number;
   kpiCount: number;
   status: PartnerStatus;
